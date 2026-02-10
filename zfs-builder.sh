@@ -2,7 +2,7 @@
 
 # ZFS building packages
 
-install_zfs() {
+build_zfs() {
 
 	local err
 
@@ -51,7 +51,7 @@ install_zfs() {
 			echo "Unsupported version"
 			return 1
 		fi
-		
+
 	#Different OS
 	else
 		echo "Not Rocky, exiting..."
@@ -64,25 +64,9 @@ install_zfs() {
 	#Configure
 	./configure
 
-	#Build ZFS in-tree
-	make -s -j"$(nproc)"
-
-	#Install userland tools
-	make install
-
-	#Update module dependencies and load ZFS
-	depmod -a
-
-	#Starting ZFS manually
-	modprobe zfs
-	
-	#Configure ZFS to load on boot
-	echo zfs > /etc/modules-load.d/zfs.conf
-	
-	#Check ZFS version
-	echo "ZFS Version:"
-	zfs --version
+	#Build packages
+	make rpm
 }
 
 # Call function
-install_zfs
+build_zfs
