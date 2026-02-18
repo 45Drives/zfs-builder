@@ -14,7 +14,7 @@ build_zfs() {
 	git clone https://github.com/openzfs/zfs.git
 
 	#Switch to release branch to build (2.3.5)
-	cd ./zfs && git checkout zfs-2.3-release
+	cd ./zfs && git checkout zfs-2.3-5
 
 	#Install dependencies
 	echo "Installing dependencies"
