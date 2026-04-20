@@ -97,6 +97,8 @@ fi
 # Build RPM packages
 echo "[5/5] Building RPM packages..."
 # Try using 'make rpm' first (standard OpenZFS method), fall back to rpmbuild if needed
+SPEC_FILE="$BUILD_DIR/zfs.spec"
+
 if [[ -f "Makefile" ]] && make -n rpm &>/dev/null 2>&1; then
     echo "Using standard OpenZFS 'make rpm' method..."
     if ! make rpm 2>&1 | tee build.log; then
@@ -118,33 +120,51 @@ if [[ -f "Makefile" ]] && make -n rpm &>/dev/null 2>&1; then
     fi
 else
     echo "Using rpmbuild method..."
+    cd /tmp/zfs-build
+    
     # Generate custom spec file with 45Drives changelog
     if [[ -f "rpm/generic/zfs.spec.in" ]]; then
-        cp "rpm/generic/zfs.spec.in" "zfs.spec"
-        sed -i "s|@VERSION@|${VERSION}|g" "zfs.spec"
-        sed -i "s|@RELEASE@|1|g" "zfs.spec"
-        sed -i "s|@PACKAGE@|zfs|g" "zfs.spec"
-        sed -i "s|@CONFIG@|kernel|g" "zfs.spec"
+        cp "rpm/generic/zfs.spec.in" "$SPEC_FILE"
         
-        if grep -q "%changelog" "zfs.spec"; then
-            CHANGELOG_SECTION=$(/bin/bash /usr/local/bin/generate-changelog rpm "$VERSION")
-            sed -i '/^%changelog/,$d' "zfs.spec"
-            echo "%changelog" >> "zfs.spec"
-            echo "$CHANGELOG_SECTION" >> "zfs.spec"
+        # Replace all known template variables
+        sed -i "s|@VERSION@|${VERSION}|g" "$SPEC_FILE"
+        sed -i "s|@RELEASE@|1|g" "$SPEC_FILE"
+        sed -i "s|@PACKAGE@|zfs|g" "$SPEC_FILE"
+        sed -i "s|@CONFIG@|kernel|g" "$SPEC_FILE"
+        
+        # Replace any remaining @ variables with empty string
+        sed -i 's|@[A-Z_]*@||g' "$SPEC_FILE"
+        
+        if grep -q "%changelog" "$SPEC_FILE"; then
+            # Create a simple changelog entry
+            CHANGELOG_SECTION="* $(date +'%a %b %d %Y') 45Drives <support@45drives.com> - ${VERSION}-1
+- OpenZFS ${VERSION} release"
+            sed -i '/^%changelog/,$d' "$SPEC_FILE"
+            echo "%changelog" >> "$SPEC_FILE"
+            echo "$CHANGELOG_SECTION" >> "$SPEC_FILE"
         fi
     fi
     
-    if ! rpmbuild -ba zfs.spec \
-        --define "_topdir $(pwd)/rpmbuild" \
-        --define "_sourcedir $(pwd)" \
+    # Set up rpmbuild directories
+    RPMBUILD_DIR="/tmp/zfs-build/rpmbuild"
+    mkdir -p "$RPMBUILD_DIR"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+    
+    # Copy tarball to SOURCES
+    cp "zfs-${VERSION}.tar.gz" "$RPMBUILD_DIR/SOURCES/"
+    
+    # Copy spec file to SPECS
+    cp "$SPEC_FILE" "$RPMBUILD_DIR/SPECS/"
+    
+    if ! rpmbuild -ba "$RPMBUILD_DIR/SPECS/zfs.spec" \
+        --define "_topdir $RPMBUILD_DIR" \
         2>&1 | tee build.log; then
         echo "Error: RPM build failed. See build.log for details."
         exit 1
     fi
     
     # Copy built RPMs
-    if [[ -d "rpmbuild/RPMS" ]]; then
-        find "rpmbuild/RPMS" -name "*.rpm" -exec cp {} "$OUTPUT_DIR/" \;
+    if [[ -d "$RPMBUILD_DIR/RPMS" ]]; then
+        find "$RPMBUILD_DIR/RPMS" -name "*.rpm" -exec cp {} "$OUTPUT_DIR/" \;
     fi
 fi
 
