@@ -76,11 +76,7 @@ if [[ ! -f "configure" ]]; then
     autoreconf -i || true
 fi
 
-# Configure with standard OpenZFS options (no path overrides for native DEB)
-# Per OpenZFS docs: "It's best not to override the paths during configure" for native DEB
-./configure --enable-systemd \
-    --enable-pyzfs \
-    2>&1 | grep -E "^(configure|  |checking)" | tail -15
+./configure 2>&1 | tail -20
 
 # Build DEB packages
 echo "[5/5] Building DEB packages..."

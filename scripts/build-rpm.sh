@@ -60,17 +60,21 @@ if [[ -f "rpm/generic/zfs.spec.in" ]]; then
     sed -i "s|@RELEASE@|1|g" "zfs.spec"
     sed -i "s|@PACKAGE@|zfs|g" "zfs.spec"
     sed -i "s|@CONFIG@|kernel|g" "zfs.spec"
+    # Replace any remaining @ variables
+    sed -i 's|@[A-Z_]*@||g' "zfs.spec"
     
-    # Replace %changelog section with custom entry
-    # Find the %changelog marker and replace everything after it
-    if grep -q "%changelog" "zfs.spec"; then
-        # Create a temp file with new changelog
-        CHANGELOG_SECTION=$(/bin/bash /usr/local/bin/generate-changelog rpm "$VERSION")
-        
-        # Split file at %changelog and replace
+    # Ensure %changelog section exists and is properly formatted
+    if ! grep -q "%changelog" "zfs.spec"; then
+        # Add changelog section if it doesn't exist
+        echo "%changelog" >> "zfs.spec"
+        echo "* $(date +'%a %b %d %Y') 45Drives <support@45drives.com> - ${VERSION}-1" >> "zfs.spec"
+        echo "- OpenZFS ${VERSION} release" >> "zfs.spec"
+    else
+        # Replace the changelog section with our version
         sed -i '/^%changelog/,$d' "zfs.spec"
         echo "%changelog" >> "zfs.spec"
-        echo "$CHANGELOG_SECTION" >> "zfs.spec"
+        echo "* $(date +'%a %b %d %Y') 45Drives <support@45drives.com> - ${VERSION}-1" >> "zfs.spec"
+        echo "- OpenZFS ${VERSION} release" >> "zfs.spec"
     fi
     echo "✓ Spec file prepared"
 else
@@ -84,15 +88,7 @@ if [[ ! -f "configure" ]]; then
     autoreconf -i || true
 fi
 
-# Configure with standard OpenZFS options
-./configure --prefix=/usr \
-    --sysconfdir=/etc \
-    --localstatedir=/var \
-    --libdir=/usr/lib64 \
-    --enable-systemd \
-    --enable-pyzfs \
-    --with-config=kernel \
-    2>&1 | grep -E "^(configure|  |checking)" | tail -15
+./configure 2>&1 | tail -20
 
 # Build RPM packages
 echo "[5/5] Building RPM packages..."
@@ -131,17 +127,21 @@ else
         sed -i "s|@RELEASE@|1|g" "$SPEC_FILE"
         sed -i "s|@PACKAGE@|zfs|g" "$SPEC_FILE"
         sed -i "s|@CONFIG@|kernel|g" "$SPEC_FILE"
-        
-        # Replace any remaining @ variables with empty string
+        # Replace any remaining @ variables
         sed -i 's|@[A-Z_]*@||g' "$SPEC_FILE"
         
-        if grep -q "%changelog" "$SPEC_FILE"; then
-            # Create a simple changelog entry
-            CHANGELOG_SECTION="* $(date +'%a %b %d %Y') 45Drives <support@45drives.com> - ${VERSION}-1
-- OpenZFS ${VERSION} release"
+        # Ensure %changelog section exists and is properly formatted
+        if ! grep -q "%changelog" "$SPEC_FILE"; then
+            # Add changelog section if it doesn't exist
+            echo "%changelog" >> "$SPEC_FILE"
+            echo "* $(date +'%a %b %d %Y') 45Drives <support@45drives.com> - ${VERSION}-1" >> "$SPEC_FILE"
+            echo "- OpenZFS ${VERSION} release" >> "$SPEC_FILE"
+        else
+            # Replace the changelog section with our version
             sed -i '/^%changelog/,$d' "$SPEC_FILE"
             echo "%changelog" >> "$SPEC_FILE"
-            echo "$CHANGELOG_SECTION" >> "$SPEC_FILE"
+            echo "* $(date +'%a %b %d %Y') 45Drives <support@45drives.com> - ${VERSION}-1" >> "$SPEC_FILE"
+            echo "- OpenZFS ${VERSION} release" >> "$SPEC_FILE"
         fi
     fi
     

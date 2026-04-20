@@ -6,13 +6,13 @@ RUN dnf install -y epel-release && \
 
 # Install build dependencies per OpenZFS official documentation
 # Reference: https://openzfs.github.io/openzfs-docs/Developer%20Resources/Building%20ZFS.html
-RUN dnf install -y \
+RUN dnf install --allowerasing -y \
     gcc make autoconf automake libtool rpm-build \
     libtirpc-devel libblkid-devel libuuid-devel libudev-devel \
     openssl-devel zlib-devel libaio-devel libattr-devel \
     elfutils-libelf-devel kernel-devel python3 python3-devel \
     python3-setuptools python3-cffi libffi-devel git ncompress \
-    libcurl-devel curl wget && \
+    libcurl-devel curl wget systemd-devel && \
     dnf install --enablerepo=epel --enablerepo=crb -y \
     python3-packaging dkms && \
     dnf clean all
