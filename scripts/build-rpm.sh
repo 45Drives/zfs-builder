@@ -55,9 +55,11 @@ if [[ -f "rpm/generic/zfs.spec.in" ]]; then
     # Copy and process the spec file
     cp "rpm/generic/zfs.spec.in" "zfs.spec"
     
-    # Basic variable substitution for spec file
+    # Variable substitution for spec file (replace all @ variables)
     sed -i "s|@VERSION@|${VERSION}|g" "zfs.spec"
     sed -i "s|@RELEASE@|1|g" "zfs.spec"
+    sed -i "s|@PACKAGE@|zfs|g" "zfs.spec"
+    sed -i "s|@CONFIG@|kernel|g" "zfs.spec"
     
     # Replace %changelog section with custom entry
     # Find the %changelog marker and replace everything after it
@@ -121,6 +123,8 @@ else
         cp "rpm/generic/zfs.spec.in" "zfs.spec"
         sed -i "s|@VERSION@|${VERSION}|g" "zfs.spec"
         sed -i "s|@RELEASE@|1|g" "zfs.spec"
+        sed -i "s|@PACKAGE@|zfs|g" "zfs.spec"
+        sed -i "s|@CONFIG@|kernel|g" "zfs.spec"
         
         if grep -q "%changelog" "zfs.spec"; then
             CHANGELOG_SECTION=$(/bin/bash /usr/local/bin/generate-changelog rpm "$VERSION")
