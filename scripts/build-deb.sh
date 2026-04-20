@@ -84,20 +84,10 @@ fi
 
 # Build DEB packages
 echo "[5/5] Building DEB packages..."
-# Try using 'make native-deb' first (standard OpenZFS method for native DEBs), fall back if needed
+# Use 'make native-deb' (standard OpenZFS method for native DEBs)
 if [[ -f "Makefile" ]] && make -n native-deb &>/dev/null 2>&1; then
     echo "Using standard OpenZFS 'make native-deb' method..."
     if ! make native-deb 2>&1 | tee build.log; then
-        # If native-deb fails, try regular make deb
-        echo "Trying 'make deb' method..."
-        if ! make deb 2>&1 | tee -a build.log; then
-            echo "Error: DEB build failed. See build.log for details."
-            exit 1
-        fi
-    fi
-elif [[ -f "Makefile" ]] && make -n deb &>/dev/null 2>&1; then
-    echo "Using standard OpenZFS 'make deb' method..."
-    if ! make deb 2>&1 | tee build.log; then
         echo "Error: DEB build failed. See build.log for details."
         exit 1
     fi

@@ -98,12 +98,21 @@ echo "[5/5] Building RPM packages..."
 if [[ -f "Makefile" ]] && make -n rpm &>/dev/null 2>&1; then
     echo "Using standard OpenZFS 'make rpm' method..."
     if ! make rpm 2>&1 | tee build.log; then
-        echo "Error: RPM build failed. See build.log for details."
+        echo "Error: RPM build failed with 'make rpm'. See build.log for details."
         exit 1
     fi
-    # Find and copy generated RPMs
-    if find . -maxdepth 2 -name "*.rpm" -type f 2>/dev/null | grep -q .; then
-        find . -maxdepth 2 -name "*.rpm" -type f -exec cp {} "$OUTPUT_DIR/" \;
+    # Find and copy generated RPMs (search more thoroughly)
+    echo "Searching for generated RPM files..."
+    if find . -name "*.rpm" -type f 2>/dev/null | grep -q .; then
+        echo "Found RPM files, copying to output directory..."
+        find . -name "*.rpm" -type f -exec cp {} "$OUTPUT_DIR/" \;
+        echo "✓ RPMs copied successfully"
+    else
+        echo "Warning: No RPM files found after 'make rpm'. Checking rpmbuild directory..."
+        if [[ -d "rpmbuild/RPMS" ]]; then
+            find "rpmbuild/RPMS" -name "*.rpm" -exec cp {} "$OUTPUT_DIR/" \;
+            echo "✓ RPMs found and copied from rpmbuild directory"
+        fi
     fi
 else
     echo "Using rpmbuild method..."
@@ -138,12 +147,16 @@ fi
 # Copy built RPMs to output directory
 echo ""
 echo "========================================="
+cd /tmp/zfs-build
+echo "Checking for RPM packages in output directory: $OUTPUT_DIR"
 if find "$OUTPUT_DIR" -name "*.rpm" -type f 2>/dev/null | grep -q .; then
     echo "✓ Build completed successfully!"
     echo "✓ Packages saved to: $OUTPUT_DIR"
     ls -lh "$OUTPUT_DIR"/*.rpm
 else
-    echo "Error: No RPM packages found after build"
+    echo "Error: No RPM packages found in $OUTPUT_DIR"
+    echo "Debug info - checking for any .rpm files in build directory:"
+    find . -name "*.rpm" -type f 2>/dev/null || echo "No .rpm files found in current build directory"
     exit 1
 fi
 
