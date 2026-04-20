@@ -1,0 +1,38 @@
+FROM quay.io/rockylinux/rockylinux:9
+
+# Install build dependencies for OpenZFS RPM builds on Rocky 9
+RUN dnf groupinstall -y "Development Tools" && \
+    dnf install -y \
+    rpm-build \
+    rpm-devel \
+    autoconf \
+    automake \
+    libtool \
+    make \
+    gcc \
+    gcc-c++ \
+    kernel-devel \
+    elfutils-libelf-devel \
+    openssl-devel \
+    libuuid-devel \
+    libblkid-devel \
+    libudev-devel \
+    libattr-devel \
+    libacl-devel \
+    python3-devel \
+    python3-setuptools \
+    libffi-devel \
+    git \
+    wget \
+    curl && \
+    dnf clean all
+
+# Set up build directory
+WORKDIR /tmp/zfs-build
+
+# Copy build script
+COPY scripts/build-rpm.sh /usr/local/bin/build-rpm
+RUN chmod +x /usr/local/bin/build-rpm
+
+# Default command
+CMD ["/usr/local/bin/build-rpm"]

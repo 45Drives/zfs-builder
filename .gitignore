@@ -1,0 +1,33 @@
+# Ignore patterns for git
+
+# Build output
+output/
+build/
+
+# Podman/container artifacts
+.podman-images
+*.tar
+*.gz
+
+# Temporary build directories
+/tmp/
+**/rpmbuild/
+**/debian/tmp/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Build logs
+build.log
+*.log

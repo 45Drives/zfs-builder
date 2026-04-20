@@ -1,0 +1,37 @@
+# Podman/container build ignore patterns
+# Reduces image size by excluding unnecessary files
+
+# Git metadata
+.git
+.gitignore
+.gitattributes
+
+# Documentation
+README.md
+*.md
+docs/
+*.txt
+
+# Build output (not needed in container)
+output/
+build/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary files
+*.log
+*.tmp
+.DS_Store
+
+# Python cache
+__pycache__/
+*.pyc
+*.egg-info/
+
+# This file itself
+.podmanignore
