@@ -8,7 +8,8 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PODMAN_IMAGES_DIR="$SCRIPT_DIR/podman"
 SCRIPTS_DIR="$SCRIPT_DIR/scripts"
-OUTPUT_DIR="$SCRIPT_DIR/output"
+# Allow output directory to be overridden by environment variable or will use default
+OUTPUT_DIR="${ZFS_OUTPUT_DIR:-$SCRIPT_DIR/output}"
 
 # Colors for output
 RED='\033[0;31m'
@@ -74,23 +75,29 @@ Arguments:
   version         OpenZFS version (e.g., 2.4.1 or zfs-2.4.1)
 
 Options:
-  --no-cache      Do not use cached layers; rebuild images from scratch
-  --all           Build for all supported distributions (ignores distribution arg)
-  --help          Show this help message
+  --output-dir <dir>  Output directory for built packages (default: ./output)
+  --no-cache          Do not use cached layers; rebuild images from scratch
+  --all               Build for all supported distributions (ignores distribution arg)
+  --help              Show this help message
+
+Environment Variables:
+  ZFS_OUTPUT_DIR      Set default output directory (can be overridden by --output-dir)
 
 Examples:
-  $0 rocky9 2.4.1                    # Build RPM for Rocky 9
-  $0 ubuntu22 2.4.1                  # Build DEB for Ubuntu 22
-  $0 rocky9 2.4.1 --no-cache         # Rebuild Rocky 9 image without cache
-  $0 all 2.4.1                       # Build for all distributions
+  $0 rocky9 2.4.1                              # Build RPM for Rocky 9
+  $0 ubuntu22 2.4.1                            # Build DEB for Ubuntu 22
+  $0 rocky9 2.4.1 --no-cache                   # Rebuild Rocky 9 image without cache
+  $0 all 2.4.1 --output-dir /var/zfs-packages # Build for all, save to custom dir
+  $0 rocky8 2.4.1 --output-dir ~/my-packages  # Build with custom output directory
+  ZFS_OUTPUT_DIR=/mnt/packages $0 rocky9 2.4.1 # Use environment variable
 
-Output packages are saved to:
-  - Rocky 8 RPMs: $OUTPUT_DIR/rocky8/
-  - Rocky 9 RPMs: $OUTPUT_DIR/rocky9/
-  - Rocky 10 RPMs: $OUTPUT_DIR/rocky10/
-  - Ubuntu 20 DEBs: $OUTPUT_DIR/ubuntu20/
-  - Ubuntu 22 DEBs: $OUTPUT_DIR/ubuntu22/
-  - Ubuntu 24 DEBs: $OUTPUT_DIR/ubuntu24/
+Output packages are saved to (default):
+  - Rocky 8 RPMs: ./output/rocky8/
+  - Rocky 9 RPMs: ./output/rocky9/
+  - Rocky 10 RPMs: ./output/rocky10/
+  - Ubuntu 20 DEBs: ./output/ubuntu20/
+  - Ubuntu 22 DEBs: ./output/ubuntu22/
+  - Ubuntu 24 DEBs: ./output/ubuntu24/
 
 EOF
     exit 0
@@ -126,6 +133,13 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --help)
             usage
+            ;;
+        --output-dir)
+            if [[ -z "$2" ]]; then
+                error "--output-dir requires an argument"
+            fi
+            OUTPUT_DIR="$2"
+            shift 2
             ;;
         --no-cache)
             NO_CACHE="--no-cache"
@@ -163,6 +177,13 @@ fi
 # Check for Podman
 if ! command -v podman &> /dev/null; then
     error "Podman is not installed. Please install Podman to continue."
+fi
+
+# Convert output directory to absolute path
+OUTPUT_DIR="${OUTPUT_DIR/#\~/$HOME}"  # Expand tilde
+if [[ ! "$OUTPUT_DIR" = /* ]]; then
+    # Relative path - make it absolute based on current working directory
+    OUTPUT_DIR="$(pwd)/$OUTPUT_DIR"
 fi
 
 info "OpenZFS Builder initialized"

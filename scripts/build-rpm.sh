@@ -92,79 +92,25 @@ fi
 
 # Build RPM packages
 echo "[5/5] Building RPM packages..."
-# Try using 'make rpm' first (standard OpenZFS method), fall back to rpmbuild if needed
+# Use 'make rpm' (standard OpenZFS method)
 SPEC_FILE="$BUILD_DIR/zfs.spec"
 
-if [[ -f "Makefile" ]] && make -n rpm &>/dev/null 2>&1; then
-    echo "Using standard OpenZFS 'make rpm' method..."
-    if ! make rpm 2>&1 | tee build.log; then
-        echo "Error: RPM build failed with 'make rpm'. See build.log for details."
-        exit 1
-    fi
-    # Find and copy generated RPMs (search more thoroughly)
-    echo "Searching for generated RPM files..."
-    if find . -name "*.rpm" -type f 2>/dev/null | grep -q .; then
-        echo "Found RPM files, copying to output directory..."
-        find . -name "*.rpm" -type f -exec cp {} "$OUTPUT_DIR/" \;
-        echo "✓ RPMs copied successfully"
-    else
-        echo "Warning: No RPM files found after 'make rpm'. Checking rpmbuild directory..."
-        if [[ -d "rpmbuild/RPMS" ]]; then
-            find "rpmbuild/RPMS" -name "*.rpm" -exec cp {} "$OUTPUT_DIR/" \;
-            echo "✓ RPMs found and copied from rpmbuild directory"
-        fi
-    fi
+if ! make rpm 2>&1 | tee build.log; then
+    echo "Error: RPM build failed with 'make rpm'. See build.log for details."
+    exit 1
+fi
+
+# Find and copy generated RPMs (search more thoroughly)
+echo "Searching for generated RPM files..."
+if find . -name "*.rpm" -type f 2>/dev/null | grep -q .; then
+    echo "Found RPM files, copying to output directory..."
+    find . -name "*.rpm" -type f -exec cp {} "$OUTPUT_DIR/" \;
+    echo "✓ RPMs copied successfully"
 else
-    echo "Using rpmbuild method..."
-    cd /tmp/zfs-build
-    
-    # Generate custom spec file with 45Drives changelog
-    if [[ -f "rpm/generic/zfs.spec.in" ]]; then
-        cp "rpm/generic/zfs.spec.in" "$SPEC_FILE"
-        
-        # Replace all known template variables
-        sed -i "s|@VERSION@|${VERSION}|g" "$SPEC_FILE"
-        sed -i "s|@RELEASE@|1|g" "$SPEC_FILE"
-        sed -i "s|@PACKAGE@|zfs|g" "$SPEC_FILE"
-        sed -i "s|@CONFIG@|kernel|g" "$SPEC_FILE"
-        # Replace any remaining @ variables
-        sed -i 's|@[A-Z_]*@||g' "$SPEC_FILE"
-        
-        # Ensure %changelog section exists and is properly formatted
-        if ! grep -q "%changelog" "$SPEC_FILE"; then
-            # Add changelog section if it doesn't exist
-            echo "%changelog" >> "$SPEC_FILE"
-            echo "* $(date +'%a %b %d %Y') 45Drives <support@45drives.com> - ${VERSION}-1" >> "$SPEC_FILE"
-            echo "- OpenZFS ${VERSION} release" >> "$SPEC_FILE"
-        else
-            # Replace the changelog section with our version
-            sed -i '/^%changelog/,$d' "$SPEC_FILE"
-            echo "%changelog" >> "$SPEC_FILE"
-            echo "* $(date +'%a %b %d %Y') 45Drives <support@45drives.com> - ${VERSION}-1" >> "$SPEC_FILE"
-            echo "- OpenZFS ${VERSION} release" >> "$SPEC_FILE"
-        fi
-    fi
-    
-    # Set up rpmbuild directories
-    RPMBUILD_DIR="/tmp/zfs-build/rpmbuild"
-    mkdir -p "$RPMBUILD_DIR"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
-    
-    # Copy tarball to SOURCES
-    cp "zfs-${VERSION}.tar.gz" "$RPMBUILD_DIR/SOURCES/"
-    
-    # Copy spec file to SPECS
-    cp "$SPEC_FILE" "$RPMBUILD_DIR/SPECS/"
-    
-    if ! rpmbuild -ba "$RPMBUILD_DIR/SPECS/zfs.spec" \
-        --define "_topdir $RPMBUILD_DIR" \
-        2>&1 | tee build.log; then
-        echo "Error: RPM build failed. See build.log for details."
-        exit 1
-    fi
-    
-    # Copy built RPMs
-    if [[ -d "$RPMBUILD_DIR/RPMS" ]]; then
-        find "$RPMBUILD_DIR/RPMS" -name "*.rpm" -exec cp {} "$OUTPUT_DIR/" \;
+    echo "Warning: No RPM files found after 'make rpm'. Checking rpmbuild directory..."
+    if [[ -d "rpmbuild/RPMS" ]]; then
+        find "rpmbuild/RPMS" -name "*.rpm" -exec cp {} "$OUTPUT_DIR/" \;
+        echo "✓ RPMs found and copied from rpmbuild directory"
     fi
 fi
 
