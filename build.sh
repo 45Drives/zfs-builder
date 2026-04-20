@@ -92,12 +92,18 @@ Examples:
   ZFS_OUTPUT_DIR=/mnt/packages $0 rocky9 2.4.1 # Use environment variable
 
 Output packages are saved to (default):
-  - Rocky 8 RPMs: ./output/rocky8/
-  - Rocky 9 RPMs: ./output/rocky9/
-  - Rocky 10 RPMs: ./output/rocky10/
-  - Ubuntu 20 DEBs: ./output/ubuntu20/
-  - Ubuntu 22 DEBs: ./output/ubuntu22/
-  - Ubuntu 24 DEBs: ./output/ubuntu24/
+  - Rocky 8 RPMs: ./output/rocky8/latest/
+  - Rocky 9 RPMs: ./output/rocky9/latest/
+  - Rocky 10 RPMs: ./output/rocky10/latest/
+  - Ubuntu 20 DEBs: ./output/ubuntu20/latest/
+  - Ubuntu 22 DEBs: ./output/ubuntu22/latest/
+  - Ubuntu 24 DEBs: ./output/ubuntu24/latest/
+
+Previous builds are automatically archived in:
+  - Rocky 8 archives: ./output/rocky8/archive/<timestamp>/
+  - Rocky 9 archives: ./output/rocky9/archive/<timestamp>/
+  - etc.
+
 
 EOF
     exit 0
@@ -192,13 +198,11 @@ echo "  Distributions: ${DISTRIBUTIONS[*]}"
 echo "  Output: $OUTPUT_DIR"
 echo ""
 
-# Create all output directories
-mkdir -p "$OUTPUT_DIR/rocky8"
-mkdir -p "$OUTPUT_DIR/rocky9"
-mkdir -p "$OUTPUT_DIR/rocky10"
-mkdir -p "$OUTPUT_DIR/ubuntu20"
-mkdir -p "$OUTPUT_DIR/ubuntu22"
-mkdir -p "$OUTPUT_DIR/ubuntu24"
+# Create all output directory structures
+for distro in rocky8 rocky9 rocky10 ubuntu20 ubuntu22 ubuntu24; do
+    mkdir -p "$OUTPUT_DIR/$distro/latest"
+    mkdir -p "$OUTPUT_DIR/$distro/archive"
+done
 
 # Function to build for a specific distribution
 build_distribution() {
@@ -218,6 +222,23 @@ build_distribution() {
         ubuntu22) DISTRO_DISPLAY="Ubuntu 22.04 LTS" ;;
         ubuntu24) DISTRO_DISPLAY="Ubuntu 24.04 LTS" ;;
     esac
+    
+    # Archive previous build if it exists
+    local DISTRO_DIR="$OUTPUT_DIR/$OUTPUT"
+    local LATEST_DIR="$DISTRO_DIR/latest"
+    local ARCHIVE_DIR="$DISTRO_DIR/archive"
+    
+    if [[ -d "$LATEST_DIR" ]] && find "$LATEST_DIR" -maxdepth 1 -type f 2>/dev/null | grep -q .; then
+        # Previous build exists, archive it
+        local TIMESTAMP=$(date +'%Y%m%d-%H%M%S')
+        mkdir -p "$ARCHIVE_DIR/$TIMESTAMP"
+        info "Archiving previous build to $ARCHIVE_DIR/$TIMESTAMP"
+        mv "$LATEST_DIR"/* "$ARCHIVE_DIR/$TIMESTAMP/" 2>/dev/null || true
+    fi
+    
+    # Clean and recreate latest directory
+    rm -rf "$LATEST_DIR"
+    mkdir -p "$LATEST_DIR"
     
     echo "========================================="
     echo "Building for $DISTRO_DISPLAY"
@@ -243,7 +264,7 @@ build_distribution() {
     # Run build container
     echo ""
     info "Running build in container..."
-    local OUTPUT_PATH="$OUTPUT_DIR/$OUTPUT"
+    local OUTPUT_PATH="$LATEST_DIR"
     if ! podman run --rm \
         -v "$OUTPUT_PATH:/tmp/zfs-build/output/$OUTPUT:Z" \
         "$IMAGE_NAME" \
@@ -272,16 +293,16 @@ echo ""
 # Show all generated packages
 for DISTRO in "${DISTRIBUTIONS[@]}"; do
     local OUTPUT="${DISTRO_OUTPUT[$DISTRO]}"
-    local OUTPUT_PATH="$OUTPUT_DIR/$OUTPUT"
+    local LATEST_PATH="$OUTPUT_DIR/$OUTPUT/latest"
     
     case "$DISTRO" in
         rocky*) EXT="rpm" ;;
         ubuntu*) EXT="deb" ;;
     esac
     
-    if find "$OUTPUT_PATH" -name "*.$EXT" -type f 2>/dev/null | grep -q .; then
-        echo "$DISTRO ($OUTPUT_PATH/):"
-        find "$OUTPUT_PATH" -name "*.$EXT" -type f -exec ls -lh {} \;
+    if find "$LATEST_PATH" -name "*.$EXT" -type f 2>/dev/null | grep -q .; then
+        echo "$DISTRO ($LATEST_PATH/):"
+        find "$LATEST_PATH" -name "*.$EXT" -type f -exec ls -lh {} \;
         echo ""
     fi
 done

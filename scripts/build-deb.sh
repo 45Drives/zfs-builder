@@ -50,25 +50,12 @@ cd "$BUILD_DIR"
 echo "✓ Extracted to $BUILD_DIR"
 
 # Generate custom debian/changelog with 45Drives entry
-echo "[3/5] Generating custom Debian changelog..."
-if [[ -d "contrib/debian" ]]; then
-    CHANGELOG_SECTION=$(/bin/bash /usr/local/bin/generate-changelog deb "$VERSION" "openzfs-zfs")
-    
-    # Prepend custom changelog to existing debian/changelog
-    if [[ -f "contrib/debian/changelog" ]]; then
-        {
-            echo "$CHANGELOG_SECTION"
-            cat "contrib/debian/changelog"
-        } > "contrib/debian/changelog.new"
-        mv "contrib/debian/changelog.new" "contrib/debian/changelog"
-    else
-        echo "$CHANGELOG_SECTION" > "contrib/debian/changelog"
-    fi
-    echo "✓ Debian changelog prepared"
-else
+echo "[3/5] Preparing Debian packaging..."
+if [[ ! -d "contrib/debian" ]]; then
     echo "Error: debian directory not found at contrib/debian"
     exit 1
 fi
+echo "✓ Debian packaging ready"
 
 # Run autoconf/configure
 echo "[4/5] Configuring build..."
@@ -81,44 +68,31 @@ fi
 # Build DEB packages
 echo "[5/5] Building DEB packages..."
 # Use 'make native-deb' (standard OpenZFS method for native DEBs)
-if [[ -f "Makefile" ]] && make -n native-deb &>/dev/null 2>&1; then
-    echo "Using standard OpenZFS 'make native-deb' method..."
-    if ! make native-deb 2>&1 | tee build.log; then
-        echo "Error: DEB build failed. See build.log for details."
-        exit 1
-    fi
-else
-    echo "Using dpkg-buildpackage method..."
-    # Generate custom debian/changelog with 45Drives entry
-    CHANGELOG_SECTION=$(/bin/bash /usr/local/bin/generate-changelog deb "$VERSION" "openzfs-zfs")
-    
-    if [[ -f "contrib/debian/changelog" ]]; then
-        {
-            echo "$CHANGELOG_SECTION"
-            cat "contrib/debian/changelog"
-        } > "contrib/debian/changelog.new"
-        mv "contrib/debian/changelog.new" "contrib/debian/changelog"
-    else
-        echo "$CHANGELOG_SECTION" > "contrib/debian/changelog"
-    fi
-    
-    if ! dpkg-buildpackage -b -uc -us 2>&1 | tee build.log; then
-        echo "Error: DEB build failed. See build.log for details."
-        exit 1
-    fi
+if ! make native-deb 2>&1 | tee build.log; then
+    echo "Error: DEB build failed. See build.log for details."
+    exit 1
 fi
 
 # Copy built DEBs to output directory
 echo ""
 echo "========================================="
 cd /tmp/zfs-build
-if find . -maxdepth 1 -name "*.deb" -type f 2>/dev/null | grep -q .; then
-    find . -maxdepth 1 -name "*.deb" -type f -exec cp {} "$OUTPUT_DIR/" \;
+echo "Searching for DEB packages..."
+if find . -name "*.deb" -type f 2>/dev/null | grep -q .; then
+    echo "Found DEB files, copying to output directory..."
+    find . -name "*.deb" -type f -exec cp {} "$OUTPUT_DIR/" \;
+    echo "✓ DEBs copied successfully"
+fi
+
+echo "Checking for DEB packages in output directory: $OUTPUT_DIR"
+if find "$OUTPUT_DIR" -name "*.deb" -type f 2>/dev/null | grep -q .; then
     echo "✓ Build completed successfully!"
     echo "✓ Packages saved to: $OUTPUT_DIR"
     ls -lh "$OUTPUT_DIR"/*.deb
 else
-    echo "Error: No DEB packages found after build"
+    echo "Error: No DEB packages found in $OUTPUT_DIR"
+    echo "Debug info - checking for any .deb files in build directory:"
+    find . -name "*.deb" -type f 2>/dev/null || echo "No .deb files found in build directory"
     exit 1
 fi
 
