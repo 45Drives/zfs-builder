@@ -76,30 +76,57 @@ if [[ ! -f "configure" ]]; then
     autoreconf -i || true
 fi
 
-# Configure for binary-only build (no kernel modules)
-./configure --prefix=/usr \
-    --sysconfdir=/etc \
-    --localstatedir=/var \
-    --libdir=/usr/lib \
-    --with-zfsexecdir=/usr/lib/zfs-linux \
-    --with-udevdir=/usr/lib/udev \
-    --with-systemdunitdir=/lib/systemd/system-generators \
-    --enable-systemd \
+# Configure with standard OpenZFS options (no path overrides for native DEB)
+# Per OpenZFS docs: "It's best not to override the paths during configure" for native DEB
+./configure --enable-systemd \
     --enable-pyzfs \
-    2>&1 | grep -E "^(configure|  |checking)" | tail -20
+    2>&1 | grep -E "^(configure|  |checking)" | tail -15
 
-# Build DEB packages (binary-only, includes DKMS)
+# Build DEB packages
 echo "[5/5] Building DEB packages..."
-if ! dpkg-buildpackage -b -uc -us 2>&1 | tail -50; then
-    echo "Error: DEB build failed. Check output above for details."
-    exit 1
+# Try using 'make native-deb' first (standard OpenZFS method for native DEBs), fall back if needed
+if [[ -f "Makefile" ]] && make -n native-deb &>/dev/null 2>&1; then
+    echo "Using standard OpenZFS 'make native-deb' method..."
+    if ! make native-deb 2>&1 | tee build.log; then
+        # If native-deb fails, try regular make deb
+        echo "Trying 'make deb' method..."
+        if ! make deb 2>&1 | tee -a build.log; then
+            echo "Error: DEB build failed. See build.log for details."
+            exit 1
+        fi
+    fi
+elif [[ -f "Makefile" ]] && make -n deb &>/dev/null 2>&1; then
+    echo "Using standard OpenZFS 'make deb' method..."
+    if ! make deb 2>&1 | tee build.log; then
+        echo "Error: DEB build failed. See build.log for details."
+        exit 1
+    fi
+else
+    echo "Using dpkg-buildpackage method..."
+    # Generate custom debian/changelog with 45Drives entry
+    CHANGELOG_SECTION=$(/bin/bash /usr/local/bin/generate-changelog deb "$VERSION" "openzfs-zfs")
+    
+    if [[ -f "contrib/debian/changelog" ]]; then
+        {
+            echo "$CHANGELOG_SECTION"
+            cat "contrib/debian/changelog"
+        } > "contrib/debian/changelog.new"
+        mv "contrib/debian/changelog.new" "contrib/debian/changelog"
+    else
+        echo "$CHANGELOG_SECTION" > "contrib/debian/changelog"
+    fi
+    
+    if ! dpkg-buildpackage -b -uc -us 2>&1 | tee build.log; then
+        echo "Error: DEB build failed. See build.log for details."
+        exit 1
+    fi
 fi
 
 # Copy built DEBs to output directory
 echo ""
 echo "========================================="
 cd /tmp/zfs-build
-if find . -maxdepth 1 -name "*.deb" -type f | grep -q .; then
+if find . -maxdepth 1 -name "*.deb" -type f 2>/dev/null | grep -q .; then
     find . -maxdepth 1 -name "*.deb" -type f -exec cp {} "$OUTPUT_DIR/" \;
     echo "✓ Build completed successfully!"
     echo "✓ Packages saved to: $OUTPUT_DIR"

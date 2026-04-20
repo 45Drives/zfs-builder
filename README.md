@@ -8,6 +8,7 @@ Build OpenZFS packages for multiple enterprise Linux and Ubuntu distributions us
 - **Multi-distribution support**: Build for 6 distributions in a single command
   - **Rocky Linux**: 8, 9, 10 (RPM-based)
   - **Ubuntu**: 20.04 LTS, 22.04 LTS, 24.04 LTS (DEB-based)
+- **Official OpenZFS best practices**: Follows dependencies and build methods from [OpenZFS official documentation](https://openzfs.github.io/openzfs-docs/Developer%20Resources/Building%20ZFS.html)
 - **Configurable versions**: Build any OpenZFS version available on GitHub releases
 - **DKMS support**: Packages include DKMS support for dynamic kernel module building
 - **Custom changelogs**: Single changelog entry: "Built by 45Drives - no source code modifications"
@@ -349,16 +350,38 @@ zfs-builder/
 
 ### Build Process Overview
 
-For each distribution, the build process follows these steps:
+For each distribution, the build process follows the official OpenZFS build methodology:
 
 1. **Distribution Validation**: Validates distribution name against supported list
 2. **Version Validation**: Validates semantic versioning format
-3. **Podman Image Building**: Builds distribution-specific container image with required build tools and dependencies
+3. **Podman Image Building**: Builds distribution-specific container image with dependencies per [OpenZFS official documentation](https://openzfs.github.io/openzfs-docs/Developer%20Resources/Building%20ZFS.html#installing-dependencies)
 4. **Source Download**: Downloads OpenZFS source tarball from GitHub releases
 5. **Source Extraction**: Extracts tarball and prepares build environment
-6. **Spec/Control Customization**: Modifies RPM spec file or DEB changelog with 45Drives attribution
-7. **Package Building**: Runs `rpmbuild` (RPM) or `dpkg-buildpackage` (DEB) inside container
-8. **Output Collection**: Copies built packages to distribution-specific output directory
+6. **Configure**: Runs `./configure` with OpenZFS standard options
+7. **Package Building**: Uses standard OpenZFS build methods:
+   - `make rpm` for Rocky Linux RPM packages
+   - `make native-deb` or `make deb` for Ubuntu DEB packages
+   - Falls back to `rpmbuild`/`dpkg-buildpackage` if standard methods unavailable
+8. **Changelog Customization**: Injects 45Drives attribution in changelog
+9. **Output Collection**: Copies built packages to distribution-specific output directory
+
+### Dependencies
+
+All Containerfiles include complete dependencies as documented in the [OpenZFS Building Guide](https://openzfs.github.io/openzfs-docs/Developer%20Resources/Building%20ZFS.html):
+
+**Rocky 8/9/10 (per OpenZFS docs):**
+- `libtirpc-devel` - TI-RPC library development files
+- `zlib-devel` - Compression library
+- `libaio-devel` - Asynchronous I/O library
+- `libcurl-devel` - URL transfer library
+- Plus additional packages: gcc, make, autoconf, automake, kernel-devel, python3, dkms, etc.
+
+**Ubuntu 20.04/22.04/24.04 (per OpenZFS docs):**
+- `libaio-dev` - Asynchronous I/O library
+- `libcurl4-openssl-dev` - URL transfer library
+- `libpam0g-dev` - PAM library
+- `libtirpc-dev` - TI-RPC library
+- Plus additional packages: debhelper, dh-dkms, dh-autoreconf, python3, git, etc.
 
 ### Multi-Distribution Build
 
@@ -380,15 +403,14 @@ When using `./build.sh all <version>`, all distributions are built sequentially:
 build.sh rocky9 2.4.1
     ↓
 Build Podman image (Containerfile.rocky9)
-    ↓ (contains: rpm-build, gcc, autoconf, kernel-devel, etc.)
+    ↓ (includes all deps per OpenZFS official docs)
 podman run zfs-builder-rocky9:latest
     ↓
 build-rpm.sh 2.4.1
-    ├─ Download https://github.com/openzfs/zfs/releases/download/zfs-2.4.1/zfs-2.4.1.tar.gz
+    ├─ Download tarball from GitHub
     ├─ Extract tarball
-    ├─ Run autoreconf && configure
-    ├─ Generate custom spec file with 45Drives changelog entry
-    ├─ Execute: rpmbuild -ba zfs.spec
+    ├─ Run ./configure with standard options
+    ├─ Execute: make rpm (or rpmbuild as fallback)
     └─ Copy RPMs to output/rocky9/
 ```
 
@@ -398,15 +420,14 @@ build-rpm.sh 2.4.1
 build.sh ubuntu22 2.4.1
     ↓
 Build Podman image (Containerfile.ubuntu22)
-    ↓ (contains: debhelper, dh-dkms, gcc, autoconf, etc.)
+    ↓ (includes all deps per OpenZFS official docs)
 podman run zfs-builder-ubuntu22:latest
     ↓
 build-deb.sh 2.4.1
-    ├─ Download https://github.com/openzfs/zfs/releases/download/zfs-2.4.1/zfs-2.4.1.tar.gz
+    ├─ Download tarball from GitHub
     ├─ Extract tarball
-    ├─ Run autoreconf && configure
-    ├─ Generate custom debian/changelog with 45Drives entry
-    ├─ Execute: dpkg-buildpackage -b -uc -us
+    ├─ Run ./configure with standard options
+    ├─ Execute: make native-deb or make deb (or dpkg-buildpackage as fallback)
     └─ Copy DEBs to output/ubuntu22/
 ```
 
@@ -449,9 +470,39 @@ rpm -q --changelog output/rocky9/zfs-utils-*.rpm
 
 This build tooling is maintained by 45Drives. See LICENSE file for details.
 
+## OpenZFS Documentation Compliance
+
+This builder follows best practices from the official [OpenZFS Developer Resources](https://openzfs.github.io/openzfs-docs/Developer%20Resources/index.html):
+
+- **Building Dependencies**: All Containerfiles install the complete dependency list as documented in [Building ZFS](https://openzfs.github.io/openzfs-docs/Developer%20Resources/Building%20ZFS.html#installing-dependencies)
+- **Build Methods**: Uses standard OpenZFS package building methods (`make rpm`, `make deb`, `make native-deb`)
+- **Distribution-Specific Optimizations**: Respects distribution-specific best practices (e.g., no path overrides for native Debian packages)
+- **DKMS Integration**: Includes DKMS support for dynamic kernel module compilation as recommended
+
+For more information about building OpenZFS, see:
+- [OpenZFS Building Guide](https://openzfs.github.io/openzfs-docs/Developer%20Resources/Building%20ZFS.html)
+- [Custom Packages](https://openzfs.github.io/openzfs-docs/Developer%20Resources/Custom%20Packages.html)
+- [GitHub OpenZFS Repository](https://github.com/openzfs/zfs)
+
 ## Support
 
 For issues or questions:
 - Check the Troubleshooting section above
 - Review Podman documentation: https://docs.podman.io/
 - Check OpenZFS releases: https://github.com/openzfs/zfs/releases
+- Review OpenZFS documentation: https://openzfs.github.io/openzfs-docs/ds (`make rpm`, `make deb`, `make native-deb`)
+- **Distribution-Specific Optimizations**: Respects distribution-specific best practices (e.g., no path overrides for native Debian packages)
+- **DKMS Integration**: Includes DKMS support for dynamic kernel module compilation as recommended
+
+For more information about building OpenZFS, see:
+- [OpenZFS Building Guide](https://openzfs.github.io/openzfs-docs/Developer%20Resources/Building%20ZFS.html)
+- [Custom Packages](https://openzfs.github.io/openzfs-docs/Developer%20Resources/Custom%20Packages.html)
+- [GitHub OpenZFS Repository](https://github.com/openzfs/zfs)
+
+## Support
+
+For issues or questions:
+- Check the Troubleshooting section above
+- Review Podman documentation: https://docs.podman.io/
+- Check OpenZFS releases: https://github.com/openzfs/zfs/releases
+- Review OpenZFS documentation: https://openzfs.github.io/openzfs-docs/

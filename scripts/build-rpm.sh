@@ -82,34 +82,69 @@ if [[ ! -f "configure" ]]; then
     autoreconf -i || true
 fi
 
+# Configure with standard OpenZFS options
+./configure --prefix=/usr \
+    --sysconfdir=/etc \
+    --localstatedir=/var \
+    --libdir=/usr/lib64 \
+    --enable-systemd \
+    --enable-pyzfs \
+    --with-config=kernel \
+    2>&1 | grep -E "^(configure|  |checking)" | tail -15
+
 # Build RPM packages
 echo "[5/5] Building RPM packages..."
-if ! rpmbuild -ba zfs.spec \
-    --define "_topdir $(pwd)/rpmbuild" \
-    --define "_sourcedir $(pwd)" \
-    --define "dist .el9" \
-    2>&1 | tee build.log; then
-    echo "Error: RPM build failed. See build.log for details."
-    exit 1
+# Try using 'make rpm' first (standard OpenZFS method), fall back to rpmbuild if needed
+if [[ -f "Makefile" ]] && make -n rpm &>/dev/null 2>&1; then
+    echo "Using standard OpenZFS 'make rpm' method..."
+    if ! make rpm 2>&1 | tee build.log; then
+        echo "Error: RPM build failed. See build.log for details."
+        exit 1
+    fi
+    # Find and copy generated RPMs
+    if find . -maxdepth 2 -name "*.rpm" -type f 2>/dev/null | grep -q .; then
+        find . -maxdepth 2 -name "*.rpm" -type f -exec cp {} "$OUTPUT_DIR/" \;
+    fi
+else
+    echo "Using rpmbuild method..."
+    # Generate custom spec file with 45Drives changelog
+    if [[ -f "rpm/generic/zfs.spec.in" ]]; then
+        cp "rpm/generic/zfs.spec.in" "zfs.spec"
+        sed -i "s|@VERSION@|${VERSION}|g" "zfs.spec"
+        sed -i "s|@RELEASE@|1|g" "zfs.spec"
+        
+        if grep -q "%changelog" "zfs.spec"; then
+            CHANGELOG_SECTION=$(/bin/bash /usr/local/bin/generate-changelog rpm "$VERSION")
+            sed -i '/^%changelog/,$d' "zfs.spec"
+            echo "%changelog" >> "zfs.spec"
+            echo "$CHANGELOG_SECTION" >> "zfs.spec"
+        fi
+    fi
+    
+    if ! rpmbuild -ba zfs.spec \
+        --define "_topdir $(pwd)/rpmbuild" \
+        --define "_sourcedir $(pwd)" \
+        2>&1 | tee build.log; then
+        echo "Error: RPM build failed. See build.log for details."
+        exit 1
+    fi
+    
+    # Copy built RPMs
+    if [[ -d "rpmbuild/RPMS" ]]; then
+        find "rpmbuild/RPMS" -name "*.rpm" -exec cp {} "$OUTPUT_DIR/" \;
+    fi
 fi
 
 # Copy built RPMs to output directory
 echo ""
 echo "========================================="
-if [[ -d "rpmbuild/RPMS" ]]; then
-    find "rpmbuild/RPMS" -name "*.rpm" -exec cp {} "$OUTPUT_DIR/" \;
+if find "$OUTPUT_DIR" -name "*.rpm" -type f 2>/dev/null | grep -q .; then
     echo "✓ Build completed successfully!"
     echo "✓ Packages saved to: $OUTPUT_DIR"
     ls -lh "$OUTPUT_DIR"/*.rpm
 else
-    echo "Warning: RPMS directory not found, checking alternative locations..."
-    if find . -name "*.rpm" -type f; then
-        find . -name "*.rpm" -type f -exec cp {} "$OUTPUT_DIR/" \;
-        echo "✓ Packages copied to: $OUTPUT_DIR"
-    else
-        echo "Error: No RPM packages found after build"
-        exit 1
-    fi
+    echo "Error: No RPM packages found after build"
+    exit 1
 fi
 
 echo "========================================="
