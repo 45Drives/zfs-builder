@@ -7,7 +7,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Reference: https://openzfs.github.io/openzfs-docs/Developer%20Resources/Custom%20Packages.html
 RUN apt-get update && \
     apt-get install -y \
-    alien autoconf automake build-essential debhelper-compat dh-autoreconf \
+    alien autoconf automake build-essential debhelper-compat debhelper dh-autoreconf \
     dh-python dkms fakeroot gawk git libaio-dev libattr1-dev \
     libblkid-dev libcurl4-openssl-dev libelf-dev libffi-dev libpam0g-dev \
     libssl-dev libtirpc-dev libtool libudev-dev linux-headers-generic parallel \
