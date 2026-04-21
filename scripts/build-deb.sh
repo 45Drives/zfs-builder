@@ -74,7 +74,8 @@ fi
 # Build DEB packages
 echo "[5/5] Building DEB packages..."
 # Use 'make native-deb' (standard OpenZFS method for native DEBs)
-if ! make native-deb 2>&1 | tee build.log; then
+# Skip building kernel modules to avoid host kernel version detection issues
+if ! make native-deb BUILD_KMOD=no 2>&1 | tee build.log; then
     echo "Error: DEB build failed. See build.log for details."
     exit 1
 fi
