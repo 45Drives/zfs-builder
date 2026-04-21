@@ -66,7 +66,7 @@ if ! bash autogen.sh 2>&1 | tail -20; then
 fi
 
 echo "Running configure..."
-if ! ./configure 2>&1 | tail -20; then
+if ! ./configure --with-config=userland 2>&1 | tail -20; then
     echo "Error: configure failed"
     exit 1
 fi
@@ -74,8 +74,8 @@ fi
 # Build DEB packages
 echo "[5/5] Building DEB packages..."
 # Use 'make native-deb' (standard OpenZFS method for native DEBs)
-# Skip building kernel modules to avoid host kernel version detection issues
-if ! make native-deb BUILD_KMOD=no 2>&1 | tee build.log; then
+# Configured with userland-only to avoid kernel module issues
+if ! make native-deb 2>&1 | tee build.log; then
     echo "Error: DEB build failed. See build.log for details."
     exit 1
 fi
