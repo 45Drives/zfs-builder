@@ -57,13 +57,19 @@ if [[ ! -d "contrib/debian" ]]; then
 fi
 echo "✓ Debian packaging ready"
 
-# Run autoconf/configure
+# Run autogen
 echo "[4/5] Configuring build..."
-if [[ ! -f "configure" ]]; then
-    autoreconf -i || true
+echo "Running autogen.sh..."
+if ! bash autogen.sh 2>&1 | tail -20; then
+    echo "Error: autogen.sh failed"
+    exit 1
 fi
 
-./configure 2>&1 | tail -20
+echo "Running configure..."
+if ! ./configure 2>&1 | tail -20; then
+    echo "Error: configure failed"
+    exit 1
+fi
 
 # Build DEB packages
 echo "[5/5] Building DEB packages..."
