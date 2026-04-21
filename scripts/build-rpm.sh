@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build OpenZFS RPM packages for EL9
+# Build OpenZFS RPM packages for Rocky Linux / EL systems
 # Usage: build-rpm.sh <version> [output-dir]
 
 set -e
@@ -28,7 +28,7 @@ BUILD_DIR="/tmp/zfs-build/zfs-$VERSION"
 TARBALL_URL="https://github.com/openzfs/zfs/releases/download/zfs-${VERSION}/zfs-${VERSION}.tar.gz"
 
 echo "========================================="
-echo "OpenZFS RPM Builder for EL9"
+echo "OpenZFS RPM Builder"
 echo "========================================="
 echo "Version: $VERSION"
 echo "Output directory: $OUTPUT_DIR"
@@ -49,41 +49,8 @@ tar xzf "zfs-${VERSION}.tar.gz"
 cd "$BUILD_DIR"
 echo "✓ Extracted to $BUILD_DIR"
 
-# Generate custom spec file with 45Drives changelog
-echo "[3/5] Generating custom RPM spec file..."
-if [[ -f "rpm/generic/zfs.spec.in" ]]; then
-    # Copy and process the spec file
-    cp "rpm/generic/zfs.spec.in" "zfs.spec"
-    
-    # Variable substitution for spec file (replace all @ variables)
-    sed -i "s|@VERSION@|${VERSION}|g" "zfs.spec"
-    sed -i "s|@RELEASE@|1|g" "zfs.spec"
-    sed -i "s|@PACKAGE@|zfs|g" "zfs.spec"
-    sed -i "s|@CONFIG@|kernel|g" "zfs.spec"
-    # Replace any remaining @ variables
-    sed -i 's|@[A-Z_]*@||g' "zfs.spec"
-    
-    # Ensure %changelog section exists and is properly formatted
-    if ! grep -q "%changelog" "zfs.spec"; then
-        # Add changelog section if it doesn't exist
-        echo "%changelog" >> "zfs.spec"
-        echo "* $(date +'%a %b %d %Y') 45Drives <support@45drives.com> - ${VERSION}-1" >> "zfs.spec"
-        echo "- OpenZFS ${VERSION} release" >> "zfs.spec"
-    else
-        # Replace the changelog section with our version
-        sed -i '/^%changelog/,$d' "zfs.spec"
-        echo "%changelog" >> "zfs.spec"
-        echo "* $(date +'%a %b %d %Y') 45Drives <support@45drives.com> - ${VERSION}-1" >> "zfs.spec"
-        echo "- OpenZFS ${VERSION} release" >> "zfs.spec"
-    fi
-    echo "✓ Spec file prepared"
-else
-    echo "Error: spec file not found at rpm/generic/zfs.spec.in"
-    exit 1
-fi
-
 # Run autogen
-echo "[4/5] Configuring build..."
+echo "[3/5] Configuring build..."
 echo "Running autogen.sh..."
 if ! bash autogen.sh 2>&1 | tail -20; then
     echo "Error: autogen.sh failed"
@@ -97,7 +64,7 @@ if ! ./configure 2>&1 | tail -20; then
 fi
 
 # Build RPM packages
-echo "[5/5] Building RPM packages..."
+echo "[4/5] Building RPM packages..."
 # Use 'make rpm' (standard OpenZFS method)
 SPEC_FILE="$BUILD_DIR/zfs.spec"
 
@@ -107,6 +74,7 @@ if ! make rpm 2>&1 | tee build.log; then
 fi
 
 # Find and copy generated RPMs (search more thoroughly)
+echo "[5/5] Verifying and copying RPMs..."
 echo "Searching for generated RPM files..."
 if find . -name "*.rpm" -type f 2>/dev/null | grep -q .; then
     echo "Found RPM files, copying to output directory..."

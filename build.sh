@@ -292,8 +292,8 @@ echo ""
 
 # Show all generated packages
 for DISTRO in "${DISTRIBUTIONS[@]}"; do
-    local OUTPUT="${DISTRO_OUTPUT[$DISTRO]}"
-    local LATEST_PATH="$OUTPUT_DIR/$OUTPUT/latest"
+    OUTPUT="${DISTRO_OUTPUT[$DISTRO]}"
+    LATEST_PATH="$OUTPUT_DIR/$OUTPUT/latest"
     
     case "$DISTRO" in
         rocky*) EXT="rpm" ;;
