@@ -4,7 +4,7 @@ FROM ubuntu:22.04
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install build dependencies per OpenZFS official documentation
-# Reference: https://openzfs.github.io/openzfs-docs/Developer%20Resources/Building%20ZFS.html
+# Reference: https://openzfs.github.io/openzfs-docs/Developer%20Resources/Custom%20Packages.html
 RUN apt-get update && \
     apt-get install -y \
     alien autoconf automake build-essential debhelper-compat dh-autoreconf \

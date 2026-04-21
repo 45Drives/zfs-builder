@@ -71,13 +71,15 @@ if ! ./configure 2>&1 | tail -20; then
     exit 1
 fi
 
-# Build DEB packages
-echo "[5/5] Building DEB packages..."
-# Use 'make native-deb' (standard OpenZFS method for native DEBs)
-if ! make native-deb KERNELVERSION= 2>&1 | tee build.log; then
+# Build DEB packages (DKMS and utilities)
+echo "[5/5] Building DEB packages (DKMS + utils)..."
+if ! make native-deb-utils native-deb-dkms 2>&1 | tee build.log; then
     echo "Error: DEB build failed. See build.log for details."
     exit 1
 fi
+
+# Remove dracut package (not needed on deb systems)
+rm -f ../openzfs-zfs-dracut_*.deb
 
 # Copy built DEBs to output directory
 echo ""

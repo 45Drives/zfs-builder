@@ -63,9 +63,9 @@ if ! ./configure 2>&1 | tail -20; then
     exit 1
 fi
 
-# Build RPM packages
-echo "[4/5] Building RPM packages..."
-if ! make rpm 2>&1 | tee build.log; then
+# Build RPM packages (DKMS and utilities)
+echo "[4/5] Building RPM packages (DKMS + utils)..."
+if ! make rpm-utils rpm-dkms 2>&1 | tee build.log; then
     echo "Error: RPM build failed. See build.log for details."
     exit 1
 fi
