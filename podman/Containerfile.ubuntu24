@@ -1,0 +1,28 @@
+FROM ubuntu:24.04
+
+# Prevent interactive prompts during build
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Install build dependencies per OpenZFS official documentation
+# Reference: https://openzfs.github.io/openzfs-docs/Developer%20Resources/Custom%20Packages.html
+RUN apt-get update && \
+    apt-get install -y \
+    alien autoconf automake build-essential debhelper-compat debhelper dh-autoreconf \
+    dh-python dh-dkms dkms fakeroot gawk git libaio-dev libattr1-dev \
+    libblkid-dev libcurl4-openssl-dev libelf-dev libffi-dev libpam0g-dev \
+    libssl-dev libtirpc-dev libtool libudev-dev linux-headers-generic parallel \
+    po-debconf python3 python3-all-dev python3-cffi python3-dev \
+    python3-packaging python3-setuptools python3-sphinx uuid-dev zlib1g-dev \
+    wget curl && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Set up build directory
+WORKDIR /tmp/zfs-build
+
+# Copy build script
+COPY scripts/build-deb.sh /usr/local/bin/build-deb
+RUN chmod +x /usr/local/bin/build-deb
+
+# Default command
+CMD ["/usr/local/bin/build-deb"]
