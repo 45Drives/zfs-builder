@@ -2,7 +2,7 @@
 # Build OpenZFS RPM packages for Rocky Linux / EL systems
 # Usage: build-rpm.sh <version> [output-dir]
 
-set -e
+set -eo pipefail
 
 VERSION="${1:-}"
 OUTPUT_DIR="${2:-/tmp/zfs-build/output/el9}"
@@ -78,7 +78,7 @@ find . -name "*.rpm" -type f -exec cp {} "$OUTPUT_DIR/" \;
 echo ""
 echo "========================================="
 cd /tmp/zfs-build
-if find "$OUTPUT_DIR" -name "*.rpm" -type f 2>/dev/null | grep -q .; then
+if find "$OUTPUT_DIR" -name "*.rpm" -type f -print -quit 2>/dev/null | grep -q .; then
     echo "✓ Build completed successfully!"
     echo "✓ Packages saved to: $OUTPUT_DIR"
     ls -lh "$OUTPUT_DIR"/*.rpm

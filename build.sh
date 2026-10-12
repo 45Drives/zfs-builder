@@ -3,7 +3,7 @@
 # Builds OpenZFS packages for multiple distributions using Podman
 # Usage: ./build.sh <distribution> <version> [options]
 
-set -e
+set -eo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PODMAN_IMAGES_DIR="$SCRIPT_DIR/podman"
@@ -198,12 +198,6 @@ echo "  Distributions: ${DISTRIBUTIONS[*]}"
 echo "  Output: $OUTPUT_DIR"
 echo ""
 
-# Create all output directory structures
-for distro in rocky8 rocky9 rocky10 ubuntu20 ubuntu22 ubuntu24; do
-    mkdir -p "$OUTPUT_DIR/$distro/latest"
-    mkdir -p "$OUTPUT_DIR/$distro/archive"
-done
-
 # Function to build for a specific distribution
 build_distribution() {
     local DISTRO="$1"
@@ -228,7 +222,7 @@ build_distribution() {
     local LATEST_DIR="$DISTRO_DIR/latest"
     local ARCHIVE_DIR="$DISTRO_DIR/archive"
     
-    if [[ -d "$LATEST_DIR" ]] && find "$LATEST_DIR" -maxdepth 1 -type f 2>/dev/null | grep -q .; then
+    if [[ -d "$LATEST_DIR" ]] && find "$LATEST_DIR" -maxdepth 1 -type f -print -quit 2>/dev/null | grep -q .; then
         # Previous build exists, archive it
         local TIMESTAMP=$(date +'%Y%m%d-%H%M%S')
         mkdir -p "$ARCHIVE_DIR/$TIMESTAMP"
@@ -261,15 +255,16 @@ build_distribution() {
         error "Failed to build Podman image"
     fi
     
-    # Run build container
+    # Run build container (full log is kept alongside the packages)
     echo ""
     info "Running build in container..."
     local OUTPUT_PATH="$LATEST_DIR"
+    local BUILD_LOG="$LATEST_DIR/build.log"
     if ! podman run --rm \
         -v "$OUTPUT_PATH:/tmp/zfs-build/output/$OUTPUT:Z" \
         "$IMAGE_NAME" \
-        /usr/local/bin/$SCRIPT "$VERSION" /tmp/zfs-build/output/$OUTPUT 2>&1 | tail -50; then
-        error "Build failed for $DISTRO_DISPLAY"
+        /usr/local/bin/$SCRIPT "$VERSION" /tmp/zfs-build/output/$OUTPUT 2>&1 | tee "$BUILD_LOG" | tail -50; then
+        error "Build failed for $DISTRO_DISPLAY (full log: $BUILD_LOG)"
     fi
     
     echo ""
@@ -300,7 +295,7 @@ for DISTRO in "${DISTRIBUTIONS[@]}"; do
         ubuntu*) EXT="deb" ;;
     esac
     
-    if find "$LATEST_PATH" -name "*.$EXT" -type f 2>/dev/null | grep -q .; then
+    if find "$LATEST_PATH" -name "*.$EXT" -type f -print -quit 2>/dev/null | grep -q .; then
         echo "$DISTRO ($LATEST_PATH/):"
         find "$LATEST_PATH" -name "*.$EXT" -type f -exec ls -lh {} \;
         echo ""
