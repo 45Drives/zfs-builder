@@ -2,7 +2,7 @@
 # Build OpenZFS DEB packages for Ubuntu 22.04
 # Usage: build-deb.sh <version> [output-dir]
 
-set -e
+set -eo pipefail
 
 VERSION="${1:-}"
 OUTPUT_DIR="${2:-/tmp/zfs-build/output/ubuntu22}"
@@ -71,9 +71,9 @@ if ! ./configure 2>&1 | tail -20; then
     exit 1
 fi
 
-# Build DEB packages (DKMS and utilities)
+# Build DEB packages (native-deb-utils also produces openzfs-zfs-dkms)
 echo "[5/5] Building DEB packages (DKMS + utils)..."
-if ! make native-deb-utils native-deb-dkms 2>&1 | tee build.log; then
+if ! make native-deb-utils 2>&1 | tee build.log; then
     echo "Error: DEB build failed. See build.log for details."
     exit 1
 fi
@@ -86,14 +86,14 @@ echo ""
 echo "========================================="
 cd /tmp/zfs-build
 echo "Searching for DEB packages..."
-if find . -name "*.deb" -type f 2>/dev/null | grep -q .; then
+if find . -maxdepth 1 -name "*.deb" -type f -print -quit 2>/dev/null | grep -q .; then
     echo "Found DEB files, copying to output directory..."
-    find . -name "*.deb" -type f -exec cp {} "$OUTPUT_DIR/" \;
+    find . -maxdepth 1 -name "*.deb" -type f -exec cp {} "$OUTPUT_DIR/" \;
     echo "✓ DEBs copied successfully"
 fi
 
 echo "Checking for DEB packages in output directory: $OUTPUT_DIR"
-if find "$OUTPUT_DIR" -name "*.deb" -type f 2>/dev/null | grep -q .; then
+if find "$OUTPUT_DIR" -name "*.deb" -type f -print -quit 2>/dev/null | grep -q .; then
     echo "✓ Build completed successfully!"
     echo "✓ Packages saved to: $OUTPUT_DIR"
     ls -lh "$OUTPUT_DIR"/*.deb

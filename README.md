@@ -89,13 +89,13 @@ The version argument accepts standard semantic versioning:
 
 ### Output Locations
 
-Built packages are saved to organized by distribution:
-- **Rocky 8 RPMs**: `output/rocky8/`
-- **Rocky 9 RPMs**: `output/rocky9/`
-- **Rocky 10 RPMs**: `output/rocky10/`
-- **Ubuntu 20 DEBs**: `output/ubuntu20/`
-- **Ubuntu 22 DEBs**: `output/ubuntu22/`
-- **Ubuntu 24 DEBs**: `output/ubuntu24/`
+Built packages are saved by distribution. Each build replaces `latest/`; the previous contents (packages plus `build.log`) are moved to `archive/<timestamp>/`:
+- **Rocky 8 RPMs**: `output/rocky8/latest/`
+- **Rocky 9 RPMs**: `output/rocky9/latest/`
+- **Rocky 10 RPMs**: `output/rocky10/latest/`
+- **Ubuntu 20 DEBs**: `output/ubuntu20/latest/`
+- **Ubuntu 22 DEBs**: `output/ubuntu22/latest/`
+- **Ubuntu 24 DEBs**: `output/ubuntu24/latest/`
 
 Example output structure:
 ```
@@ -215,28 +215,28 @@ All outputs are organized by distribution in the `output/` directories.
 
 ```bash
 # List all built packages by distribution
-ls -lh output/rocky8/
-ls -lh output/rocky9/
-ls -lh output/rocky10/
-ls -lh output/ubuntu20/
-ls -lh output/ubuntu22/
-ls -lh output/ubuntu24/
+ls -lh output/rocky8/latest/
+ls -lh output/rocky9/latest/
+ls -lh output/rocky10/latest/
+ls -lh output/ubuntu20/latest/
+ls -lh output/ubuntu22/latest/
+ls -lh output/ubuntu24/latest/
 
 # Query RPM package info (all Rocky variants)
-rpm -qip output/rocky8/zfs-utils-*.rpm
-rpm -qip output/rocky9/zfs-utils-*.rpm
-rpm -qip output/rocky10/zfs-utils-*.rpm
+rpm -qip output/rocky8/latest/zfs-utils-*.rpm
+rpm -qip output/rocky9/latest/zfs-utils-*.rpm
+rpm -qip output/rocky10/latest/zfs-utils-*.rpm
 
 # Query DEB package info (all Ubuntu variants)
-dpkg-deb -I output/ubuntu20/openzfs-zfsutils_*.deb
-dpkg-deb -I output/ubuntu22/openzfs-zfsutils_*.deb
-dpkg-deb -I output/ubuntu24/openzfs-zfsutils_*.deb
+dpkg-deb -I output/ubuntu20/latest/openzfs-zfsutils_*.deb
+dpkg-deb -I output/ubuntu22/latest/openzfs-zfsutils_*.deb
+dpkg-deb -I output/ubuntu24/latest/openzfs-zfsutils_*.deb
 
 # Extract and view changelog from RPM
-rpm -q --changelog output/rocky9/zfs-utils-*.rpm | head -20
+rpm -q --changelog output/rocky9/latest/zfs-utils-*.rpm | head -20
 
 # Extract and view changelog from DEB
-dpkg-deb --raw-extract output/ubuntu22/openzfs-zfsutils_*.deb /tmp/deb-extract
+dpkg-deb --raw-extract output/ubuntu22/latest/openzfs-zfsutils_*.deb /tmp/deb-extract
 cat /tmp/deb-extract/usr/share/doc/openzfs-zfsutils/changelog.gz | gunzip
 ```
 
@@ -301,15 +301,15 @@ podman image prune -a
 
 Rebuild images without cache:
 ```bash
-./build.sh both 2.4.1 --no-cache
+./build.sh all 2.4.1 --no-cache
 ```
 
 ### Build succeeds but no packages in output directory
 
 Verify Podman volume mounts are working:
 ```bash
-podman run --rm -v $(pwd)/output/el9:/test alpine touch /test/test.txt
-ls -la output/el9/test.txt
+podman run --rm -v $(pwd)/output/rocky9/latest:/test:Z alpine touch /test/test.txt
+ls -la output/rocky9/latest/test.txt
 ```
 
 If volume mount fails, check SELinux context (on RHEL-based systems):
@@ -359,9 +359,8 @@ For each distribution, the build process follows the official OpenZFS build meth
 5. **Source Extraction**: Extracts tarball and prepares build environment
 6. **Configure**: Runs `./configure` with OpenZFS standard options
 7. **Package Building**: Uses standard OpenZFS build methods:
-   - `make rpm` for Rocky Linux RPM packages
-   - `make native-deb` or `make deb` for Ubuntu DEB packages
-   - Falls back to `rpmbuild`/`dpkg-buildpackage` if standard methods unavailable
+   - `make rpm-utils rpm-dkms` for Rocky Linux RPM packages
+   - `make native-deb-utils` for Ubuntu DEB packages (includes `openzfs-zfs-dkms`)
 8. **Changelog Customization**: Injects 45Drives attribution in changelog
 9. **Output Collection**: Copies built packages to distribution-specific output directory
 
@@ -410,7 +409,7 @@ build-rpm.sh 2.4.1
     ├─ Download tarball from GitHub
     ├─ Extract tarball
     ├─ Run ./configure with standard options
-    ├─ Execute: make rpm (or rpmbuild as fallback)
+    ├─ Execute: make rpm-utils rpm-dkms
     └─ Copy RPMs to output/rocky9/
 ```
 
@@ -427,7 +426,7 @@ build-deb.sh 2.4.1
     ├─ Download tarball from GitHub
     ├─ Extract tarball
     ├─ Run ./configure with standard options
-    ├─ Execute: make native-deb or make deb (or dpkg-buildpackage as fallback)
+    ├─ Execute: make native-deb-utils
     └─ Copy DEBs to output/ubuntu22/
 ```
 
@@ -457,13 +456,13 @@ Edit Containerfiles to add/remove dependencies:
 ./build.sh rocky9 2.4.1
 
 # Verify output
-ls -la output/rocky9/
+ls -la output/rocky9/latest/
 
 # Test all distributions
 ./build.sh all 2.4.1
 
 # Inspect packages
-rpm -q --changelog output/rocky9/zfs-utils-*.rpm
+rpm -q --changelog output/rocky9/latest/zfs-utils-*.rpm
 ```
 
 ## License
@@ -476,21 +475,6 @@ This builder follows best practices from the official [OpenZFS Developer Resourc
 
 - **Building Dependencies**: All Containerfiles install the complete dependency list as documented in [Building ZFS](https://openzfs.github.io/openzfs-docs/Developer%20Resources/Building%20ZFS.html#installing-dependencies)
 - **Build Methods**: Uses standard OpenZFS package building methods (`make rpm`, `make deb`, `make native-deb`)
-- **Distribution-Specific Optimizations**: Respects distribution-specific best practices (e.g., no path overrides for native Debian packages)
-- **DKMS Integration**: Includes DKMS support for dynamic kernel module compilation as recommended
-
-For more information about building OpenZFS, see:
-- [OpenZFS Building Guide](https://openzfs.github.io/openzfs-docs/Developer%20Resources/Building%20ZFS.html)
-- [Custom Packages](https://openzfs.github.io/openzfs-docs/Developer%20Resources/Custom%20Packages.html)
-- [GitHub OpenZFS Repository](https://github.com/openzfs/zfs)
-
-## Support
-
-For issues or questions:
-- Check the Troubleshooting section above
-- Review Podman documentation: https://docs.podman.io/
-- Check OpenZFS releases: https://github.com/openzfs/zfs/releases
-- Review OpenZFS documentation: https://openzfs.github.io/openzfs-docs/ds (`make rpm`, `make deb`, `make native-deb`)
 - **Distribution-Specific Optimizations**: Respects distribution-specific best practices (e.g., no path overrides for native Debian packages)
 - **DKMS Integration**: Includes DKMS support for dynamic kernel module compilation as recommended
 
