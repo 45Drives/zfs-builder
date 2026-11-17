@@ -1,0 +1,28 @@
+# Build image for OpenZFS DEB packages (Ubuntu)
+# Build with: --build-arg RELEASE=20.04|22.04|24.04
+ARG RELEASE=24.04
+FROM docker.io/library/ubuntu:${RELEASE}
+
+# Prevent interactive prompts during build
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Build dependencies per OpenZFS official documentation
+# Reference: https://openzfs.github.io/openzfs-docs/Developer%20Resources/Custom%20Packages.html
+# dh-dkms was split out of dkms in newer releases; install it only where it exists.
+RUN apt-get update && \
+    if apt-cache show dh-dkms >/dev/null 2>&1; then dh_dkms=dh-dkms; else dh_dkms=; fi && \
+    apt-get install -y \
+    alien autoconf automake build-essential debhelper debhelper-compat dh-autoreconf \
+    dh-python dkms $dh_dkms fakeroot gawk git libaio-dev libattr1-dev \
+    libblkid-dev libcurl4-openssl-dev libelf-dev libffi-dev libpam0g-dev \
+    libssl-dev libtirpc-dev libtool libudev-dev linux-headers-generic parallel \
+    po-debconf python3 python3-all-dev python3-cffi python3-dev \
+    python3-packaging python3-setuptools python3-sphinx uuid-dev zlib1g-dev \
+    curl && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+WORKDIR /tmp/zfs-build
+
+COPY --chmod=755 build-deb.sh /usr/local/bin/build-deb
+COPY --chmod=755 ubuntu-package-names.py /usr/local/bin/ubuntu-package-names

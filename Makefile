@@ -4,7 +4,7 @@
 help:
 	@echo "OpenZFS RPM/DEB Builder - Makefile targets"
 	@echo ""
-	@echo "Usage: make TARGET [VERSION=X.Y.Z]"
+	@echo "Usage: make TARGET [VERSION=X.Y.Z] [JOBS=N]"
 	@echo ""
 	@echo "Rocky Linux targets:"
 	@echo "  build-rocky8        Build RPM for Rocky Linux 8 (requires VERSION)"
@@ -18,6 +18,7 @@ help:
 	@echo ""
 	@echo "Multi-target:"
 	@echo "  build-all           Build for all supported distributions (requires VERSION)"
+	@echo "                      Add JOBS=N to build N distributions at once"
 	@echo ""
 	@echo "Maintenance:"
 	@echo "  clean               Remove all output packages"
@@ -26,7 +27,7 @@ help:
 	@echo "Examples:"
 	@echo "  make build-rocky9 VERSION=2.4.1"
 	@echo "  make build-ubuntu22 VERSION=2.4.1"
-	@echo "  make build-all VERSION=2.4.1"
+	@echo "  make build-all VERSION=2.4.1 JOBS=3"
 	@echo "  make clean"
 	@echo ""
 
@@ -39,12 +40,12 @@ $(addprefix build-,$(DISTROS) all): build-%:
 		echo "Usage: make $@ VERSION=2.4.1"; \
 		exit 1; \
 	fi
-	@./build.sh $* $(VERSION)
+	@./build.sh $* $(VERSION) $(if $(JOBS),--jobs $(JOBS))
 
 # Remove all output packages (latest builds and archives)
 clean:
 	@echo "Removing output packages..."
-	@rm -rf $(foreach d,$(DISTROS),output/$(d)/latest output/$(d)/archive)
+	@rm -rf $(foreach d,$(DISTROS),output/$(d))
 	@echo "✓ Cleaned output directories"
 
 # Remove all Podman images
