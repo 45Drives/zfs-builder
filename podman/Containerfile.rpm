@@ -1,0 +1,27 @@
+# Build image for OpenZFS RPM packages (Rocky Linux / EL)
+# Build with: --build-arg RELEASE=8|9|10
+ARG RELEASE=9
+FROM quay.io/rockylinux/rockylinux:${RELEASE}
+
+# EPEL plus the CodeReady Builder repo (named "powertools" on EL8, "crb" on EL9+)
+RUN dnf install -y epel-release dnf-plugins-core && \
+    if [ "$(rpm -E '%{rhel}')" = "8" ]; then crb=powertools; else crb=crb; fi && \
+    dnf config-manager --set-enabled "$crb"
+
+# Build dependencies per OpenZFS official documentation
+# Reference: https://openzfs.github.io/openzfs-docs/Developer%20Resources/Building%20ZFS.html
+# --allowerasing lets curl replace curl-minimal on EL9+ base images
+# --nobest tolerates brief BaseOS/AppStream skew (e.g. gcc published before libgcc)
+RUN dnf install --allowerasing --nobest -y \
+    gcc make autoconf automake libtool rpm-build \
+    libtirpc-devel libblkid-devel libuuid-devel libudev-devel \
+    openssl-devel zlib-devel libaio-devel libattr-devel \
+    elfutils-libelf-devel kernel-devel python3 python3-devel \
+    python3-setuptools python3-cffi libffi-devel git ncompress \
+    libcurl-devel curl systemd systemd-devel \
+    python3-packaging dkms && \
+    dnf clean all
+
+WORKDIR /tmp/zfs-build
+
+COPY --chmod=755 build-rpm.sh /usr/local/bin/build-rpm

@@ -1,112 +1,80 @@
 #!/bin/bash
 # OpenZFS RPM/DEB Builder - Main Orchestrator
-# Builds OpenZFS packages for multiple distributions using Podman
-# Usage: ./build.sh <distribution> <version> [options]
+# Builds unmodified upstream OpenZFS packages for multiple distributions using Podman
+# Usage: ./build.sh <distribution|all> <version> [options]
 
-set -eo pipefail
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PODMAN_IMAGES_DIR="$SCRIPT_DIR/podman"
+CONTAINERFILE_DIR="$SCRIPT_DIR/podman"
 SCRIPTS_DIR="$SCRIPT_DIR/scripts"
-# Allow output directory to be overridden by environment variable or will use default
+KEYRING_FILE="$SCRIPT_DIR/keys/openzfs-release-keys.asc"
 OUTPUT_DIR="${ZFS_OUTPUT_DIR:-$SCRIPT_DIR/output}"
+CACHE_DIR="${ZFS_CACHE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/zfs-builder}"
+RELEASE_URL="https://github.com/openzfs/zfs/releases/download"
 
-# Colors for output
+# Fingerprints of the keys OpenZFS releases are signed with (shipped in keys/).
+# https://openzfs.github.io/openzfs-docs/Project%20and%20Community/Signing%20Keys.html
+TRUSTED_FINGERPRINTS=(
+    "C33DF142657ED1F7C328A2960AB9E991C6AF658B"  # Brian Behlendorf
+    "4F3BA9AB6D1F8D683DC2DFB56AD860EED4598027"  # Tony Hutter
+)
+
+# Supported distributions: name -> "<package type>|<base image release>|<display name>"
+DISTROS=(rocky8 rocky9 rocky10 ubuntu20 ubuntu22 ubuntu24)
+declare -A DISTRO_INFO=(
+    [rocky8]="rpm|8|Rocky Linux 8"
+    [rocky9]="rpm|9|Rocky Linux 9"
+    [rocky10]="rpm|10|Rocky Linux 10"
+    [ubuntu20]="deb|20.04|Ubuntu 20.04 LTS"
+    [ubuntu22]="deb|22.04|Ubuntu 22.04 LTS"
+    [ubuntu24]="deb|24.04|Ubuntu 24.04 LTS"
+)
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
-
-# Supported distributions
-declare -A DISTRO_IMAGE
-declare -A DISTRO_SCRIPT
-declare -A DISTRO_OUTPUT
-declare -A DISTRO_TYPE
-
-# Rocky distributions (RPM)
-DISTRO_IMAGE[rocky8]="zfs-builder-rocky8:latest"
-DISTRO_SCRIPT[rocky8]="build-rpm"
-DISTRO_OUTPUT[rocky8]="rocky8"
-DISTRO_TYPE[rocky8]="rpm"
-
-DISTRO_IMAGE[rocky9]="zfs-builder-rocky9:latest"
-DISTRO_SCRIPT[rocky9]="build-rpm"
-DISTRO_OUTPUT[rocky9]="rocky9"
-DISTRO_TYPE[rocky9]="rpm"
-
-DISTRO_IMAGE[rocky10]="zfs-builder-rocky10:latest"
-DISTRO_SCRIPT[rocky10]="build-rpm"
-DISTRO_OUTPUT[rocky10]="rocky10"
-DISTRO_TYPE[rocky10]="rpm"
-
-# Ubuntu distributions (DEB)
-DISTRO_IMAGE[ubuntu20]="zfs-builder-ubuntu20:latest"
-DISTRO_SCRIPT[ubuntu20]="build-deb"
-DISTRO_OUTPUT[ubuntu20]="ubuntu20"
-DISTRO_TYPE[ubuntu20]="deb"
-
-DISTRO_IMAGE[ubuntu22]="zfs-builder-ubuntu22:latest"
-DISTRO_SCRIPT[ubuntu22]="build-deb"
-DISTRO_OUTPUT[ubuntu22]="ubuntu22"
-DISTRO_TYPE[ubuntu22]="deb"
-
-DISTRO_IMAGE[ubuntu24]="zfs-builder-ubuntu24:latest"
-DISTRO_SCRIPT[ubuntu24]="build-deb"
-DISTRO_OUTPUT[ubuntu24]="ubuntu24"
-DISTRO_TYPE[ubuntu24]="deb"
+NC='\033[0m'
 
 usage() {
-    cat <<EOF
+    cat <<USAGE
 OpenZFS RPM/DEB Builder
-Usage: $0 <distribution> <version> [options]
+Usage: $0 <distribution|all> <version> [options]
 
 Supported Distributions:
-  Rocky Linux:
-    rocky8      Build RPM for Rocky Linux 8
-    rocky9      Build RPM for Rocky Linux 9
-    rocky10     Build RPM for Rocky Linux 10
-  Ubuntu:
-    ubuntu20    Build DEB for Ubuntu 20.04 LTS
-    ubuntu22    Build DEB for Ubuntu 22.04 LTS
-    ubuntu24    Build DEB for Ubuntu 24.04 LTS
+  rocky8, rocky9, rocky10       RPM packages for Rocky Linux / EL 8, 9, 10
+  ubuntu20, ubuntu22, ubuntu24  DEB packages for Ubuntu 20.04, 22.04, 24.04 LTS
+  all                           Every distribution above
 
 Arguments:
-  distribution    See supported distributions above
-  version         OpenZFS version (e.g., 2.4.1 or zfs-2.4.1)
+  version             OpenZFS release version (e.g., 2.4.1 or zfs-2.4.1)
 
 Options:
   --output-dir <dir>  Output directory for built packages (default: ./output)
-  --no-cache          Do not use cached layers; rebuild images from scratch
-  --all               Build for all supported distributions (ignores distribution arg)
+  --cache-dir <dir>   Where verified source tarballs are cached
+                      (default: ~/.cache/zfs-builder)
+  --jobs <n>          Build up to <n> distributions at once (default: 1)
+  --no-cache          Rebuild container images from scratch
+  --no-verify         Skip GPG signature verification of the source tarball
   --help              Show this help message
 
 Environment Variables:
-  ZFS_OUTPUT_DIR      Set default output directory (can be overridden by --output-dir)
+  ZFS_OUTPUT_DIR      Default output directory (overridden by --output-dir)
+  ZFS_CACHE_DIR       Default cache directory (overridden by --cache-dir)
 
 Examples:
-  $0 rocky9 2.4.1                              # Build RPM for Rocky 9
-  $0 ubuntu22 2.4.1                            # Build DEB for Ubuntu 22
-  $0 rocky9 2.4.1 --no-cache                   # Rebuild Rocky 9 image without cache
-  $0 all 2.4.1 --output-dir /var/zfs-packages # Build for all, save to custom dir
-  $0 rocky8 2.4.1 --output-dir ~/my-packages  # Build with custom output directory
-  ZFS_OUTPUT_DIR=/mnt/packages $0 rocky9 2.4.1 # Use environment variable
+  $0 rocky9 2.4.1                               # RPMs for Rocky 9
+  $0 ubuntu22 2.4.1                             # DEBs for Ubuntu 22.04
+  $0 all 2.4.1 --jobs 3                         # Everything, three builds at a time
+  $0 all 2.4.1 --output-dir /var/zfs-packages   # Custom output directory
 
-Output packages are saved to (default):
-  - Rocky 8 RPMs: ./output/rocky8/latest/
-  - Rocky 9 RPMs: ./output/rocky9/latest/
-  - Rocky 10 RPMs: ./output/rocky10/latest/
-  - Ubuntu 20 DEBs: ./output/ubuntu20/latest/
-  - Ubuntu 22 DEBs: ./output/ubuntu22/latest/
-  - Ubuntu 24 DEBs: ./output/ubuntu24/latest/
+Output layout (per distribution):
+  <output-dir>/<distro>/latest/              Packages and build.log of the last successful build
+  <output-dir>/<distro>/archive/<timestamp>/ Previous successful builds
+  <output-dir>/<distro>/failed-build.log     Log of the most recent failed build, if any
 
-Previous builds are automatically archived in:
-  - Rocky 8 archives: ./output/rocky8/archive/<timestamp>/
-  - Rocky 9 archives: ./output/rocky9/archive/<timestamp>/
-  - etc.
-
-
-EOF
-    exit 0
+A failed build never touches latest/.
+USAGE
 }
 
 error() {
@@ -119,40 +87,60 @@ info() {
 }
 
 warn() {
-    echo -e "${YELLOW}⚠${NC} $1"
+    echo -e "${YELLOW}⚠${NC} $1" >&2
 }
 
-# Parse arguments
+# ---------------------------------------------------------------------------
+# Argument parsing
+# ---------------------------------------------------------------------------
+for arg in "$@"; do
+    if [[ "$arg" == "--help" || "$arg" == "-h" ]]; then
+        usage
+        exit 0
+    fi
+done
+
 if [[ $# -lt 2 ]]; then
-    echo "Error: Missing arguments" >&2
-    usage
+    echo -e "${RED}Error: Missing arguments${NC}" >&2
+    usage >&2
+    exit 2
 fi
 
 DISTRO="$1"
 VERSION="$2"
-NO_CACHE=""
-BUILD_ALL=0
-
-# Parse optional arguments
 shift 2
+
+NO_CACHE=0
+VERIFY=1
+JOBS=1
+
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --help)
-            usage
-            ;;
         --output-dir)
-            if [[ -z "$2" ]]; then
-                error "--output-dir requires an argument"
-            fi
+            [[ -n "${2:-}" ]] || error "--output-dir requires an argument"
             OUTPUT_DIR="$2"
             shift 2
             ;;
+        --cache-dir)
+            [[ -n "${2:-}" ]] || error "--cache-dir requires an argument"
+            CACHE_DIR="$2"
+            shift 2
+            ;;
+        --jobs|-j)
+            [[ "${2:-}" =~ ^[1-9][0-9]*$ ]] || error "--jobs requires a positive integer"
+            JOBS="$2"
+            shift 2
+            ;;
         --no-cache)
-            NO_CACHE="--no-cache"
+            NO_CACHE=1
+            shift
+            ;;
+        --no-verify)
+            VERIFY=0
             shift
             ;;
         --all)
-            BUILD_ALL=1
+            DISTRO="all"
             shift
             ;;
         *)
@@ -161,145 +149,249 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Handle --all flag
-if [[ $BUILD_ALL -eq 1 ]] || [[ "$DISTRO" == "all" ]]; then
-    DISTRIBUTIONS=("rocky8" "rocky9" "rocky10" "ubuntu20" "ubuntu22" "ubuntu24")
-else
-    # Validate distribution
-    if [[ ! -v DISTRO_IMAGE[$DISTRO] ]]; then
-        error "Unknown distribution '$DISTRO'. Run '$0 --help' for supported options."
-    fi
+if [[ "$DISTRO" == "all" ]]; then
+    DISTRIBUTIONS=("${DISTROS[@]}")
+elif [[ -v DISTRO_INFO[$DISTRO] ]]; then
     DISTRIBUTIONS=("$DISTRO")
+else
+    error "Unknown distribution '$DISTRO'. Run '$0 --help' for supported options."
 fi
 
-# Normalize version (remove 'zfs-' prefix if present)
+# Normalize version (remove 'zfs-' prefix if present) and validate it
 VERSION="${VERSION#zfs-}"
-
-# Validate version format (basic semver check)
-if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-.+)?$ ]]; then
-    error "Invalid version format '$VERSION'. Expected semver (e.g., 2.4.1)"
+if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?$ ]]; then
+    error "Invalid version format '$VERSION'. Expected e.g. 2.4.1"
 fi
 
-# Check for Podman
-if ! command -v podman &> /dev/null; then
-    error "Podman is not installed. Please install Podman to continue."
+command -v podman &> /dev/null || error "Podman is not installed. Please install Podman to continue."
+command -v curl &> /dev/null || error "curl is not installed. Please install curl to continue."
+
+# Make a path absolute (expanding a leading ~)
+absolute_path() {
+    local path="${1/#\~/$HOME}"
+    [[ "$path" == /* ]] || path="$PWD/$path"
+    echo "$path"
+}
+OUTPUT_DIR="$(absolute_path "$OUTPUT_DIR")"
+CACHE_DIR="$(absolute_path "$CACHE_DIR")"
+
+if (( JOBS > ${#DISTRIBUTIONS[@]} )); then
+    JOBS=${#DISTRIBUTIONS[@]}
 fi
 
-# Convert output directory to absolute path
-OUTPUT_DIR="${OUTPUT_DIR/#\~/$HOME}"  # Expand tilde
-if [[ ! "$OUTPUT_DIR" = /* ]]; then
-    # Relative path - make it absolute based on current working directory
-    OUTPUT_DIR="$(pwd)/$OUTPUT_DIR"
-fi
+TARBALL_NAME="zfs-${VERSION}.tar.gz"
+TARBALL="$CACHE_DIR/$TARBALL_NAME"
 
+# ---------------------------------------------------------------------------
+# Source download and verification (once, on the host)
+# ---------------------------------------------------------------------------
+download() {
+    local url="$1" dest="$2"
+    if ! curl --fail --location --silent --show-error --retry 3 --retry-delay 2 \
+        --output "$dest.part" "$url"; then
+        rm -f "$dest.part"
+        return 1
+    fi
+    mv "$dest.part" "$dest"
+}
+
+# Succeeds only if the signature is valid AND made by one of the pinned keys.
+verify_signature() {
+    local tarball="$1" signature="$2"
+    command -v gpg &> /dev/null || \
+        error "gpg is required to verify the source tarball (or pass --no-verify)"
+    [[ -f "$KEYRING_FILE" ]] || error "Release keyring not found: $KEYRING_FILE"
+
+    local gnupg_home status fingerprint trusted
+    gnupg_home="$(mktemp -d)"
+    chmod 700 "$gnupg_home"
+    status="$(
+        export GNUPGHOME="$gnupg_home"
+        gpg --batch --quiet --import "$KEYRING_FILE" 2> /dev/null
+        gpg --batch --status-fd 1 --verify "$signature" "$tarball" 2> /dev/null
+    )" || true
+    rm -rf "$gnupg_home"
+
+    # VALIDSIG's last field is the fingerprint of the primary key that signed.
+    fingerprint="$(awk '$2 == "VALIDSIG" { print $NF }' <<< "$status")"
+    [[ -n "$fingerprint" ]] || return 1
+    for trusted in "${TRUSTED_FINGERPRINTS[@]}"; do
+        [[ "$fingerprint" == "$trusted" ]] && return 0
+    done
+    return 1
+}
+
+fetch_source() {
+    mkdir -p "$CACHE_DIR"
+    local base="$RELEASE_URL/zfs-${VERSION}"
+
+    if [[ -f "$TARBALL" ]]; then
+        info "Using cached source tarball: $TARBALL"
+    else
+        echo "Downloading $TARBALL_NAME..."
+        download "$base/$TARBALL_NAME" "$TARBALL" || \
+            error "Failed to download $base/$TARBALL_NAME (does release $VERSION exist?)"
+    fi
+
+    if (( VERIFY )); then
+        if [[ ! -f "$TARBALL.asc" ]]; then
+            download "$base/$TARBALL_NAME.asc" "$TARBALL.asc" || \
+                error "Failed to download signature $base/$TARBALL_NAME.asc"
+        fi
+        if ! verify_signature "$TARBALL" "$TARBALL.asc"; then
+            rm -f "$TARBALL" "$TARBALL.asc"
+            error "GPG signature verification FAILED for $TARBALL_NAME; removed it from the cache"
+        fi
+        info "GPG signature verified (OpenZFS release key)"
+    else
+        warn "Skipping GPG signature verification (--no-verify)"
+    fi
+    echo "  SHA256: $(sha256sum "$TARBALL" | cut -d' ' -f1)"
+}
+
+# ---------------------------------------------------------------------------
+# Per-distribution build
+# ---------------------------------------------------------------------------
+# Builds into a staging directory and only replaces latest/ on success.
+# Runs in a subshell; the exit status is the build result.
+build_distribution() (
+    distro="$1"
+    IFS='|' read -r pkg_type release display <<< "${DISTRO_INFO[$distro]}"
+    image="zfs-builder-$distro:latest"
+    distro_dir="$OUTPUT_DIR/$distro"
+    staging_dir="$distro_dir/.staging"
+    log="$distro_dir/.build.log"
+
+    rm -rf "$staging_dir"
+    mkdir -p "$staging_dir" || exit 1
+    rm -f "$distro_dir/failed-build.log"
+
+    # Sequential builds also stream to the terminal; parallel builds only log.
+    run_logged() {
+        if (( JOBS == 1 )); then
+            "$@" 2>&1 | tee -a "$log"
+        else
+            "$@" >> "$log" 2>&1
+        fi
+    }
+
+    # errexit is inactive here (the caller tests our exit status), so every
+    # step that can fail is checked explicitly.
+    fail() {
+        run_logged echo "Error: $1"
+        mv "$log" "$distro_dir/failed-build.log"
+        rm -rf "$staging_dir"
+        exit 1
+    }
+
+    : > "$log"
+    run_logged echo "=== Building OpenZFS $VERSION for $display ==="
+
+    build_args=(--pull=newer --build-arg "RELEASE=$release" -t "$image"
+                -f "$CONTAINERFILE_DIR/Containerfile.$pkg_type")
+    if (( NO_CACHE )); then
+        build_args+=(--no-cache)
+    fi
+    run_logged podman build "${build_args[@]}" "$SCRIPTS_DIR" \
+        || fail "container image build failed"
+
+    run_logged podman run --rm \
+        -v "$staging_dir:/output:Z" \
+        -v "$CACHE_DIR:/source:ro,z" \
+        "$image" "/usr/local/bin/build-$pkg_type" "$VERSION" "/source/$TARBALL_NAME" /output \
+        || fail "package build failed"
+
+    compgen -G "$staging_dir/*.$pkg_type" > /dev/null \
+        || fail "build produced no .$pkg_type packages"
+
+    # Success: archive the previous build, then promote staging to latest/
+    mv "$log" "$staging_dir/build.log"
+    if [[ -d "$distro_dir/latest" ]]; then
+        archive_dir="$distro_dir/archive/$(date +'%Y%m%d-%H%M%S')"
+        mkdir -p "$distro_dir/archive"
+        mv "$distro_dir/latest" "$archive_dir" || exit 1
+    fi
+    mv "$staging_dir" "$distro_dir/latest"
+)
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 info "OpenZFS Builder initialized"
 echo "  Version: $VERSION"
 echo "  Distributions: ${DISTRIBUTIONS[*]}"
 echo "  Output: $OUTPUT_DIR"
+echo "  Parallel builds: $JOBS"
 echo ""
 
-# Function to build for a specific distribution
-build_distribution() {
-    local DISTRO="$1"
-    local IMAGE_NAME="${DISTRO_IMAGE[$DISTRO]}"
-    local SCRIPT="${DISTRO_SCRIPT[$DISTRO]}"
-    local OUTPUT="${DISTRO_OUTPUT[$DISTRO]}"
-    local DISTRO_TYPE="${DISTRO_TYPE[$DISTRO]}"
-    local DISTRO_DISPLAY="$DISTRO"
-    
-    # Friendly display names
-    case "$DISTRO" in
-        rocky8) DISTRO_DISPLAY="Rocky Linux 8" ;;
-        rocky9) DISTRO_DISPLAY="Rocky Linux 9" ;;
-        rocky10) DISTRO_DISPLAY="Rocky Linux 10" ;;
-        ubuntu20) DISTRO_DISPLAY="Ubuntu 20.04 LTS" ;;
-        ubuntu22) DISTRO_DISPLAY="Ubuntu 22.04 LTS" ;;
-        ubuntu24) DISTRO_DISPLAY="Ubuntu 24.04 LTS" ;;
-    esac
-    
-    # Archive previous build if it exists
-    local DISTRO_DIR="$OUTPUT_DIR/$OUTPUT"
-    local LATEST_DIR="$DISTRO_DIR/latest"
-    local ARCHIVE_DIR="$DISTRO_DIR/archive"
-    
-    if [[ -d "$LATEST_DIR" ]] && find "$LATEST_DIR" -maxdepth 1 -type f -print -quit 2>/dev/null | grep -q .; then
-        # Previous build exists, archive it
-        local TIMESTAMP=$(date +'%Y%m%d-%H%M%S')
-        mkdir -p "$ARCHIVE_DIR/$TIMESTAMP"
-        info "Archiving previous build to $ARCHIVE_DIR/$TIMESTAMP"
-        mv "$LATEST_DIR"/* "$ARCHIVE_DIR/$TIMESTAMP/" 2>/dev/null || true
+fetch_source
+echo ""
+
+STATUS_DIR="$(mktemp -d)"
+cleanup() {
+    rm -rf "$STATUS_DIR"
+    local d
+    for d in "${DISTRIBUTIONS[@]}"; do
+        rm -rf "$OUTPUT_DIR/$d/.staging" "$OUTPUT_DIR/$d/.build.log"
+    done
+}
+trap cleanup EXIT
+trap 'exit 130' INT TERM
+
+run_build() {
+    local distro="$1" rc=0
+    if (( JOBS > 1 )); then
+        echo "→ $distro: build started"
     fi
-    
-    # Clean and recreate latest directory
-    rm -rf "$LATEST_DIR"
-    mkdir -p "$LATEST_DIR"
-    
-    echo "========================================="
-    echo "Building for $DISTRO_DISPLAY"
-    echo "========================================="
-    
-    # Find Containerfile
-    local CONTAINERFILE="$PODMAN_IMAGES_DIR/Containerfile.$DISTRO"
-    if [[ ! -f "$CONTAINERFILE" ]]; then
-        error "Containerfile not found: $CONTAINERFILE"
+    build_distribution "$distro" || rc=$?
+    echo "$rc" > "$STATUS_DIR/$distro"
+    if (( JOBS > 1 )); then
+        if (( rc == 0 )); then
+            info "$distro: build finished"
+        else
+            warn "$distro: build FAILED"
+        fi
     fi
-    
-    # Build Podman image
-    echo ""
-    info "Building Podman image: $IMAGE_NAME"
-    if ! podman build \
-        -t "$IMAGE_NAME" \
-        -f "$CONTAINERFILE" \
-        $NO_CACHE \
-        "$SCRIPT_DIR" 2>&1 | tail -20; then
-        error "Failed to build Podman image"
-    fi
-    
-    # Run build container (full log is kept alongside the packages)
-    echo ""
-    info "Running build in container..."
-    local OUTPUT_PATH="$LATEST_DIR"
-    local BUILD_LOG="$LATEST_DIR/build.log"
-    if ! podman run --rm \
-        -v "$OUTPUT_PATH:/tmp/zfs-build/output/$OUTPUT:Z" \
-        "$IMAGE_NAME" \
-        /usr/local/bin/$SCRIPT "$VERSION" /tmp/zfs-build/output/$OUTPUT 2>&1 | tee "$BUILD_LOG" | tail -50; then
-        error "Build failed for $DISTRO_DISPLAY (full log: $BUILD_LOG)"
-    fi
-    
-    echo ""
 }
 
-
-# Execute builds for each distribution
-for DISTRO in "${DISTRIBUTIONS[@]}"; do
-    build_distribution "$DISTRO"
-done
-
-# Final summary
-echo ""
-echo "========================================="
-info "Build process completed successfully!"
-echo "========================================="
-echo ""
-echo "Output packages:"
-echo ""
-
-# Show all generated packages
-for DISTRO in "${DISTRIBUTIONS[@]}"; do
-    OUTPUT="${DISTRO_OUTPUT[$DISTRO]}"
-    LATEST_PATH="$OUTPUT_DIR/$OUTPUT/latest"
-    
-    case "$DISTRO" in
-        rocky*) EXT="rpm" ;;
-        ubuntu*) EXT="deb" ;;
-    esac
-    
-    if find "$LATEST_PATH" -name "*.$EXT" -type f -print -quit 2>/dev/null | grep -q .; then
-        echo "$DISTRO ($LATEST_PATH/):"
-        find "$LATEST_PATH" -name "*.$EXT" -type f -exec ls -lh {} \;
+if (( JOBS == 1 )); then
+    for distro in "${DISTRIBUTIONS[@]}"; do
+        run_build "$distro"
         echo ""
+    done
+else
+    running=0
+    for distro in "${DISTRIBUTIONS[@]}"; do
+        if (( running >= JOBS )); then
+            wait -n || true
+            running=$((running - 1))
+        fi
+        run_build "$distro" &
+        running=$((running + 1))
+    done
+    wait
+    echo ""
+fi
+
+# Summary: every distribution is attempted; any failure makes the run fail.
+echo "========================================="
+echo "Build summary (OpenZFS $VERSION)"
+echo "========================================="
+failed=0
+for distro in "${DISTRIBUTIONS[@]}"; do
+    IFS='|' read -r pkg_type _ _ <<< "${DISTRO_INFO[$distro]}"
+    if [[ "$(cat "$STATUS_DIR/$distro" 2> /dev/null)" == "0" ]]; then
+        latest="$OUTPUT_DIR/$distro/latest"
+        count=$(find "$latest" -maxdepth 1 -name "*.$pkg_type" -type f | wc -l)
+        info "$distro: $count packages in $latest/"
+    else
+        failed=$((failed + 1))
+        echo -e "${RED}✗${NC} $distro: FAILED (log: $OUTPUT_DIR/$distro/failed-build.log)"
     fi
 done
-
 echo "========================================="
+
+if (( failed > 0 )); then
+    error "$failed of ${#DISTRIBUTIONS[@]} builds failed"
+fi
+info "All builds completed successfully"
